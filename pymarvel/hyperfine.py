@@ -110,9 +110,6 @@ def calc_hf_presence(
     # When the number of trans in the data frame is equal to the number of possible transitions, the scale factor
     # returned is 1. When only 1 of the possible transitions is present (provided more than 1 are possible, the scale
     # factor is 10. This relationship is linear relative to the fraction of possible transitions available.
-    # if possible_hf_trans == 1:
-    #     return 1
-    # else:
     print(hf_presence_scale_factor, possible_hf_trans, present_hf_trans)
     return 1 + (
         hf_presence_scale_factor
@@ -143,7 +140,9 @@ def calc_hf_skew(
     ]
     mean_possible_f_centre = np.mean(possible_f_centres)
 
-    present_f_centres = [np.mean([pair[0], pair[1]]) for pair in present_f_pair_list]
+    present_f_centres = [
+        np.mean([f_pair[0], f_pair[1]]) for f_pair in present_f_pair_list
+    ]
     mean_present_f_centre = np.mean(present_f_centres)
     abs_f_centre_offset = abs(mean_present_f_centre - mean_possible_f_centre)
     print(abs_f_centre_offset)
