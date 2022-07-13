@@ -217,7 +217,21 @@ def deperturb_hyperfine(
     hf_skew_scale_factor: float = None,
     n_workers: int = 8,
 ) -> pd.DataFrame:
-    # TODO: Error handling for if {J, F} cols not in qn_list.
+    if (
+        len(
+            {energy_col, unc_col, source_col, intensity_col}.difference(
+                transitions.columns
+            )
+        )
+        > 0
+    ):
+        raise RuntimeError(
+            "The following columns were not found in the transition DataFrame: ",
+            {energy_col, unc_col, source_col, intensity_col}.difference(
+                transitions.columns
+            ),
+        )
+
     if f_col in qn_list:
         qn_list.remove(f_col)
     transitions["source"] = transitions["source"].map(lambda x: x.split(".")[0])
@@ -225,14 +239,15 @@ def deperturb_hyperfine(
     group_by_cols = [qn + state_label for state_label in suffixes for qn in qn_list] + [
         source_col
     ]
+    if len(set(group_by_cols).difference(transitions.columns)) > 0:
+        raise RuntimeError(
+            "The following columns were not found in the transition DataFrame: ",
+            set(group_by_cols).difference(transitions.columns),
+        )
+
     transitions_grouped = transitions.loc[transitions[energy_col] >= 0].groupby(
         by=group_by_cols, as_index=False
     )
-
-    j_col_u = j_col + suffixes[0]
-    j_col_l = j_col + suffixes[1]
-    f_col_u = f_col + suffixes[0]
-    f_col_l = f_col + suffixes[1]
 
     output_cols = group_by_cols + [
         energy_col + "_wm",
@@ -247,10 +262,10 @@ def deperturb_hyperfine(
         nuclear_spin,
         energy_col,
         unc_col,
-        j_col_u,
-        j_col_l,
-        f_col_u,
-        f_col_l,
+        j_col + suffixes[0],
+        j_col + suffixes[1],
+        f_col + suffixes[0],
+        f_col + suffixes[1],
         intensity_col,
         hf_presence_scale_factor,
         hf_skew_scale_factor,

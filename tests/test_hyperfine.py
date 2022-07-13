@@ -86,11 +86,30 @@ def test_calc_possible_hf_skew(
 
 
 def test_deperturb_hyperfine(df_transitions):
-    print(df_transitions)
-    print("BEGIN TEST")
     deperturbed_transitions = deperturb_hyperfine(
         df_transitions,
         qn_list=["state", "J", "F"],
         nuclear_spin=2,
     )
-    print(deperturbed_transitions)
+    assert len(deperturbed_transitions) == 2
+    assert round(deperturbed_transitions["energy_wm"].loc[0], 6) == 100.095884
+    assert deperturbed_transitions["present_hf_trans"].loc[0] == 2
+    assert deperturbed_transitions["possible_hf_trans"].loc[1] == 5
+    assert deperturbed_transitions["hfs_presence"].loc[1] == 5
+    assert deperturbed_transitions["hfs_skew"].loc[0] == 3
+
+
+def test_deperturb_hyperfine_column_errors(df_transitions):
+    with pytest.raises(RuntimeError):
+        deperturb_hyperfine(
+            df_transitions,
+            qn_list=["state", "J", "F"],
+            nuclear_spin=2,
+            intensity_col="wrong",
+        )
+    with pytest.raises(RuntimeError):
+        deperturb_hyperfine(
+            df_transitions,
+            qn_list=["state", "J", "F", "WRONG"],
+            nuclear_spin=2,
+        )
