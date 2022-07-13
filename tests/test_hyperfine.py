@@ -5,7 +5,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pymarvel.hyperfine import deperturb_hyperfine
+from pymarvel.hyperfine import (
+    calc_hf_skew,
+    calc_num_possible_hf_trans,
+    calc_possible_hf_trans,
+    deperturb_hyperfine,
+)
 
 
 @pytest.fixture(scope="session")
@@ -33,6 +38,51 @@ def df_transitions():
             "intensity",
         ],
     )
+
+
+@pytest.mark.parametrize(
+    "test_nuclear_spin,test_j_u,test_j_l,test_delta_f_list",
+    [(3.5, 5.5, 4.5, [-1, 0, 1])],
+)
+def test_calculate_possible_hf_trans(
+    test_nuclear_spin, test_j_u, test_j_l, test_delta_f_list
+):
+    possible_hf_trans = calc_possible_hf_trans(
+        test_nuclear_spin, test_j_u, test_j_l, test_delta_f_list
+    )
+    print(possible_hf_trans)
+    assert len(possible_hf_trans) == 21
+
+
+@pytest.mark.parametrize(
+    "test_nuclear_spin,test_j_u,test_j_l,test_f_u_list,test_f_l_list",
+    [(3.5, 5.5, 4.5, [4, 3, 5, 6], [4, 4, 4, 5])],
+)
+def test_new_calculate_num_possible_hf_transitions(
+    test_nuclear_spin, test_j_u, test_j_l, test_f_u_list, test_f_l_list
+):
+    new_num_poss_hf_trans = calc_num_possible_hf_trans(
+        test_nuclear_spin, test_j_u, test_j_l, test_f_u_list, test_f_l_list
+    )
+    assert new_num_poss_hf_trans == 21
+
+
+@pytest.mark.parametrize(
+    "test_nuclear_spin,test_j_u,test_j_l,test_f_u_list,test_f_l_list",
+    [(3.5, 5.5, 4.5, [4, 3, 5, 6], [4, 4, 4, 5])],
+)
+def test_calc_possible_hf_skew(
+    test_nuclear_spin, test_j_u, test_j_l, test_f_u_list, test_f_l_list
+):
+    hf_skew = calc_hf_skew(
+        test_nuclear_spin,
+        test_j_u,
+        test_j_l,
+        test_f_u_list,
+        test_f_l_list,
+        hf_skew_scale_factor=4,
+    )
+    assert hf_skew == 3.5
 
 
 def test_deperturb_hyperfine(df_transitions):

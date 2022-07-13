@@ -8,7 +8,7 @@ import pandas as pd
 import tqdm
 
 
-def calculate_weighted_mean_energy(
+def calc_weighted_mean_energy(
     energy_list: t.List[float], weight_list: t.List[float]
 ) -> float:
     if sum(weight_list) != 0:
@@ -51,148 +51,107 @@ def propagate_weighted_mean_unc(
         return np.nan
 
 
-def calculate_num_possible_hf_transitions(
-    j_u: float, j_l: float, f_u_list: t.List[float], f_l_list: t.List[float]
-) -> int:
-    # Determined present DeltaF values:
-    present_f_pair_list = list(zip(f_u_list, f_l_list))
-    # print('PRESENT F PAIRS: ', present_f_pair_list)
-    present_delta_f_list = list(
-        set([int(f_u - f_l) for f_u, f_l in present_f_pair_list])
-    )
-    # print('PRESENT DELTA F VALUES: ', present_delta_f_list)
-
-    # 0 indexing necessary/check if list first?
-    j_u = j_u[0]
-    j_l = j_l[0]
-    # print(f'J_U={j_u}, J_L={j_l}')
-    min_j = min((j_u, j_l))
-    # TODO: Change to use same method as calculate_hfs_skew()?
-    # If min_j is >= I(=3.5) then this value is 8(=2I+1). Decreases by 2 for each J below this.
-    if min_j == 0.5:
-        max_delta_f_trans = 2
-    elif min_j == 1.5:
-        max_delta_f_trans = 4
-    elif min_j == 2.5:
-        max_delta_f_trans = 6
+def calc_possible_f_values(
+    nuclear_spin: float, j_value: float
+) -> t.List[t.Union[int, float]]:
+    min_f = abs(j_value - nuclear_spin)
+    f_is_half_integral = False
+    if min_f % 1 == 0.5:
+        f_is_half_integral = True
+    max_f = j_value + nuclear_spin
+    if f_is_half_integral:
+        possible_f = [x / 2 for x in range(int(min_f * 2), int((max_f + 1) * 2), 2)]
     else:
-        max_delta_f_trans = 8
+        possible_f = list(range(int(min_f), int(max_f) + 1))
+    return possible_f
 
-    max_j = max((j_u, j_l))
 
-    # If the maximum number of f trans is in [2,4,6], i.e.: is defined by min_j, and min_j is not equal to max_j, then
-    # this is the limiting factor and we can set the number of trans for each branch as this value.
-    if max_delta_f_trans in [2, 4, 6] and max_j > min_j:
-        num_delta_f_trans = np.repeat(max_delta_f_trans, len(present_delta_f_list))
-        # print(f'(if) num_Delta_f_trans = {num_delta_f_trans}')
-    else:
-        delta_j = j_u - j_l
-        # print(f'DELTA_J={delta_j}')
-        num_delta_f_trans = [
-            int(max_delta_f_trans - abs(delta_j - delta_f))
-            for delta_f in present_delta_f_list
+def calc_possible_hf_trans(
+    nuclear_spin: float, j_u: float, j_l: float, delta_f_list: t.List[float]
+) -> t.List[t.Tuple[t.Union[int, float], t.Union[int, float]]]:
+    possible_f_l = calc_possible_f_values(nuclear_spin=nuclear_spin, j_value=j_l)
+    possible_f_u = calc_possible_f_values(nuclear_spin=nuclear_spin, j_value=j_u)
+
+    possible_f_pair_list = [
+        [
+            (f_u, f_l)
+            for f_l in possible_f_l
+            for f_u in possible_f_u
+            if (f_u - f_l) == delta_f
         ]
-        # print(f'(else) num_Delta_f_trans = {num_delta_f_trans}')
+        for delta_f in delta_f_list
+    ]
+    possible_f_pair_list = [
+        pair for delta_f_pair_list in possible_f_pair_list for pair in delta_f_pair_list
+    ]
+    return possible_f_pair_list
 
-    num_trans = sum(num_delta_f_trans)
-    return num_trans
+
+def calc_num_possible_hf_trans(
+    nuclear_spin: float,
+    j_u: float,
+    j_l: float,
+    f_u_list: t.List[float],
+    f_l_list: t.List[float],
+) -> int:
+    present_delta_f_list = list(
+        set([int(f_u - f_l) for f_u, f_l in list(zip(f_u_list, f_l_list))])
+    )
+    return len(calc_possible_hf_trans(nuclear_spin, j_u, j_l, present_delta_f_list))
 
 
-def calculate_hfs_presence(
+def calc_hf_presence(
     possible_hf_trans: int,
     present_hf_trans: int,
-    hfs_presence_scale_factor: float = 4.0,
+    hf_presence_scale_factor: float = None,
 ) -> float:
+    if hf_presence_scale_factor is None:
+        hf_presence_scale_factor = 4.0
     # When the number of trans in the data frame is equal to the number of possible transitions, the scale factor
     # returned is 1. When only 1 of the possible transitions is present (provided more than 1 are possible, the scale
     # factor is 10. This relationship is linear relative to the fraction of possible transitions available.
     # if possible_hf_trans == 1:
     #     return 1
     # else:
+    print(hf_presence_scale_factor, possible_hf_trans, present_hf_trans)
     return 1 + (
-        hfs_presence_scale_factor
+        hf_presence_scale_factor
         * (possible_hf_trans - present_hf_trans)
         / (possible_hf_trans - 1)
     )
 
 
-def calculate_hfs_skew(
+def calc_hf_skew(
     nuclear_spin: float,
     j_u: float,
     j_l: float,
     f_u_list: t.List[float],
     f_l_list: t.List[float],
-    hfs_skew_scale_factor: float = 4.0,
+    hf_skew_scale_factor: float = None,
 ) -> float:
-    # 1: Determine present DeltaF values in input f_u/f_l lists.
+    if hf_skew_scale_factor is None:
+        hf_skew_scale_factor = 4.0
     present_f_pair_list = list(zip(f_u_list, f_l_list))
-    # print('PRESENT F PAIRS: ', present_f_pair_list)
     present_delta_f_list = list(
         set([int(f_u - f_l) for f_u, f_l in present_f_pair_list])
     )
-    # print('PRESENT DELTA F VALUES: ', present_delta_f_list)
-    # if len(present_delta_f_list) > 1:
-    #     print(colored(np.repeat('*******************', 1000), 'green'))
-
-    # 2: Calculate full mu_DeltaF for the j_u->j_l passed.
-    j_u = j_u[0]
-    j_l = j_l[0]
-    # print(f'J_L: {j_l}, J_U: {j_u}')
-
-    min_f_l = abs(j_l - nuclear_spin)
-    f_is_half_integral = False
-    if min_f_l % 1 == 0.5:
-        f_is_half_integral = True
-    max_f_l = j_l + nuclear_spin
-    # print(f'MIN F_L: {min_f_l}, MAX F_L: {max_f_l}')
-    if f_is_half_integral:
-        possible_f_l = [
-            x / 2 for x in range(int(min_f_l * 2), int((max_f_l + 1) * 2), 2)
-        ]
-    else:
-        possible_f_l = list(range(int(min_f_l), int(max_f_l) + 1))
-    # print('POSSIBLE F_L: ', possible_f_l)
-
-    min_f_u = abs(j_u - nuclear_spin)
-    max_f_u = j_u + nuclear_spin
-    # print(f'MIN F_U: {min_f_u}, MAX F_U: {max_f_u}')
-    if f_is_half_integral:
-        possible_f_u = [
-            x / 2 for x in range(int(min_f_u * 2), int((max_f_u + 1) * 2), 2)
-        ]
-    else:
-        possible_f_u = list(range(int(min_f_u), int(max_f_u) + 1))
-    # print('POSSIBLE F_U: ', possible_f_u)
-
-    possible_f_pair_list = [
-        [
-            [f_u, f_l]
-            for f_l in possible_f_l
-            for f_u in possible_f_u
-            if (f_u - f_l) == delta_f
-        ]
-        for delta_f in present_delta_f_list
-    ]
-    # print('POSSIBLE F PAIRS: ', possible_f_pair_list)
+    possible_f_pair_list = calc_possible_hf_trans(
+        nuclear_spin, j_u, j_l, present_delta_f_list
+    )
     possible_f_centres = [
-        np.mean([pair[0], pair[1]])
-        for pair_list in possible_f_pair_list
-        for pair in pair_list
+        np.mean([f_pair[0], f_pair[1]]) for f_pair in possible_f_pair_list
     ]
-    # print('POSSIBLE F CENTRES: ', possible_f_centres)
-    mean_possible_f_centre = sum(possible_f_centres) / len(possible_f_centres)
-    # print(f'MEAN POSSIBLE F CENTRE: {mean_possible_f_centre}')
+    mean_possible_f_centre = np.mean(possible_f_centres)
 
-    # 3: Calculate current mu_DeltaF for the j_u->j_l passed.
     present_f_centres = [np.mean([pair[0], pair[1]]) for pair in present_f_pair_list]
     mean_present_f_centre = np.mean(present_f_centres)
-    # print(f'MEAN PRESENT F CENTRE: {mean_present_f_centre}')
     abs_f_centre_offset = abs(mean_present_f_centre - mean_possible_f_centre)
+    print(abs_f_centre_offset)
 
-    return 1 + (hfs_skew_scale_factor * abs_f_centre_offset)
+    return 1 + (hf_skew_scale_factor * abs_f_centre_offset)
 
 
-def calculate_deperturbation(
+def calc_deperturbation(
     nuclear_spin: float,
     energy_col: str,
     unc_col: str,
@@ -201,34 +160,35 @@ def calculate_deperturbation(
     f_col_u: str,
     f_col_l: str,
     intensity_col: str,
-    hfs_presence_scale_factor: float,
-    hfs_skew_scale_factor: float,
+    hf_presence_scale_factor: float,
+    hf_skew_scale_factor: float,
     grouped_data,
 ) -> t.List:
     df_group = grouped_data[1]
-    energy_wm = calculate_weighted_mean_energy(
+    energy_wm = calc_weighted_mean_energy(
         energy_list=df_group[energy_col], weight_list=df_group[intensity_col]
     )
     unc_wm = propagate_weighted_mean_unc(df_group[unc_col], df_group[intensity_col])
     present_hf_trans = len(df_group.index)
-    possible_hf_trans = calculate_num_possible_hf_transitions(
-        df_group[j_col_u].values,
-        df_group[j_col_l].values,
+    possible_hf_trans = calc_num_possible_hf_trans(
+        nuclear_spin,
+        df_group[j_col_u].iloc[0],
+        df_group[j_col_l].iloc[0],
         df_group[f_col_u].values,
         df_group[f_col_l].values,
     )
-    hfs_presence = calculate_hfs_presence(
+    hfs_presence = calc_hf_presence(
         possible_hf_trans,
         present_hf_trans,
-        hfs_presence_scale_factor=hfs_presence_scale_factor,
+        hf_presence_scale_factor=hf_presence_scale_factor,
     )
-    hfs_skew = calculate_hfs_skew(
+    hfs_skew = calc_hf_skew(
         nuclear_spin,
-        df_group[j_col_u].values,
-        df_group[j_col_l].values,
+        df_group[j_col_u].iloc[0],
+        df_group[j_col_l].iloc[0],
         df_group[f_col_u].values,
         df_group[f_col_l].values,
-        hfs_skew_scale_factor=hfs_skew_scale_factor,
+        hf_skew_scale_factor=hf_skew_scale_factor,
     )
 
     out_list = list(grouped_data[0])
@@ -254,8 +214,8 @@ def deperturb_hyperfine(
     source_col: str = "source",
     intensity_col: str = "intensity",
     suffixes: t.Tuple[str, str] = ("_u", "_l"),
-    hfs_presence_scale_factor: float = None,
-    hfs_skew_scale_factor: float = None,
+    hf_presence_scale_factor: float = None,
+    hf_skew_scale_factor: float = None,
     n_workers: int = 8,
 ) -> pd.DataFrame:
     # TODO: Error handling for if {J, F} cols not in qn_list.
@@ -283,9 +243,8 @@ def deperturb_hyperfine(
         "hfs_presence",
         "hfs_skew",
     ]
-
     worker = functools.partial(
-        calculate_deperturbation,
+        calc_deperturbation,
         nuclear_spin,
         energy_col,
         unc_col,
@@ -294,8 +253,8 @@ def deperturb_hyperfine(
         f_col_u,
         f_col_l,
         intensity_col,
-        hfs_presence_scale_factor,
-        hfs_skew_scale_factor,
+        hf_presence_scale_factor,
+        hf_skew_scale_factor,
     )
 
     deperturbed_list = []
