@@ -100,20 +100,3 @@ def fortran_format(val: str, fmt: str) -> str:
 
 def create_tag(source_name: str, index: int, length: int) -> str:
     return f"{source_name}.{index:0{length}d}"
-
-
-# TODO: Move these to testing.
-# fortran_format('12', 'i12.3')
-# fortran_format('12', 'i11')
-# fortran_format('12.8483', 'f10.2')
-# fortran_format('12.34534534', 'f10.9')
-# fortran_format('beans', 'a')
-# fortran_format('beans', 'a19')
-# fortran_format('1.389478939845', 'e10.3')
-# fortran_format('5000000.7771389478939845', 'g20.5')
-# fortran_format('5000000.7771389478939845', 'G20.5')
-# fortran_format('50000.77', 'G10.8')
-# fortran_format('502345700.7771389478939845', 'e12.5')
-# fortran_format('23485723.4562735234', 'E12.7')
-# fortran_format('inf', 'e12.5')
-# fortran_format('nan', 'e12.5')

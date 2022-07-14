@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pymarvel.plot import plot_state_coverage
+from pymarvel.plot import PlotType, plot_state_coverage
 from pymarvel.states import read_mvl_energies
 
 
@@ -81,9 +81,10 @@ def test_plot_state_coverage(
     plot_state_coverage(
         energies=diatomic_energies,
         state_configuration_dict=state_configuration_dict,
-        qn_group_cols=qn_group_cols,
-        out_file=temp_plot_output,
         colours=colours,
+        show=False,
+        out_file=temp_plot_output,
+        plot_type=PlotType.VIOLIN,
         electron_configurations=electron_configurations,
         energy_col=energy_col,
     )

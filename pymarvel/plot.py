@@ -1,5 +1,6 @@
 import re
 import typing as t
+from enum import Enum
 from itertools import cycle, islice
 
 import matplotlib.pyplot as plt
@@ -7,26 +8,23 @@ import numpy as np
 import pandas as pd
 
 
-def get_state_tex(
-    grouped_states: pd.DataFrame, energy_sort_col: str = "energy_min"
-) -> t.Dict:
+class PlotType(Enum):
+    VIOLIN = "Ca"
+    EVENT = "Ma"
+
+
+def get_state_tex(states: t.List[str]) -> t.Dict:
     """
 
     Args:
-        grouped_states:     pd.DataFrame containing the grouped states to determine markup strings for.
-        energy_sort_col:    The column for the energy to sort the states on, generally either 'energy_min' or 't_0'
-
+        states: List of raw state labels to be converted to tex.
     Returns:
         A dictionary containing a mapping from the raw state label to its tex markup.
     """
-    markup_states = list(
-        grouped_states.sort_values(by=[energy_sort_col], ascending=[1])[
-            "state"
-        ].unique()
-    )
+    states = set(states)
     state_tex_dict = {}
     state_regex = re.compile(r"(\w)(['`]?)_?(\d)(\w*)([-\+]?)")
-    for state in markup_states:
+    for state in states:
         state_match = state_regex.match(state)
         prime = "\\prime" if state_match.group(2) != "" else ""
         symmetry = state_match.group(5)
@@ -39,12 +37,21 @@ def get_state_tex(
 def plot_state_coverage(
     energies: pd.DataFrame,
     state_configuration_dict: t.Dict,
-    qn_group_cols: t.List[str],
     colours: t.List[str],
-    out_file: str,
+    show: bool = True,
+    out_file: str = None,
+    plot_type: PlotType = PlotType.EVENT,
     electron_configurations: t.List[str] = None,
     energy_col: str = "energy",
 ):
+    if out_file is None and not show:
+        raise RuntimeError(
+            "No out_file specified and show set to False - nothing to do."
+        )
+    if plot_type not in (PlotType.EVENT, PlotType.VIOLIN):
+        raise RuntimeError(
+            f"State coverage plot only accepts PlotTypes of {PlotType.EVENT} (default) or {PlotType.VIOLIN}."
+        )
     if electron_configurations is None:
         plot_config_list = list(set(state_configuration_dict.values()))
     else:
@@ -102,43 +109,41 @@ def plot_state_coverage(
         for state in plot_config_states
     ]
 
-    config_state_widths = [
-        0.02 if len(energies) > 1000 else 0.05 for energies in config_state_energies
-    ]
-
     plt.figure(num=None, dpi=800, figsize=(8, 7))
 
-    plt.eventplot(
-        config_state_energies,
-        linelengths=0.95,
-        linewidths=config_state_widths,
-        colors=plot_colours,
-        orientation="vertical",
-    )
+    if plot_type is PlotType.EVENT:
+        config_state_widths = [
+            0.02 if len(energies) > 1000 else 0.05 for energies in config_state_energies
+        ]
 
-    # TODO: Add support for T_0 values.
-    t0_label = "energy_min"
-    # t0_label = 't0'
-    df_energies_group = energies.groupby(by=qn_group_cols, as_index=False).agg(
-        {energy_col: ["min"]}
-    )
-    energy_min_col = energy_col + "_min"
-    df_energies_group.columns = qn_group_cols + [energy_min_col]
+        plt.eventplot(
+            config_state_energies,
+            linelengths=0.95,
+            linewidths=config_state_widths,
+            colors=plot_colours,
+            orientation="vertical",
+        )
+    elif plot_type is PlotType.VIOLIN:
+        violin_parts = plt.violinplot(
+            config_state_energies,
+            positions=range(0, len(config_state_energies)),
+            showmeans=False,
+            showmedians=False,
+            showextrema=False,
+        )
+        for part_idx, part in enumerate(violin_parts["bodies"]):
+            part.set_facecolor(plot_colours[part_idx])
 
-    state_tex_dict = get_state_tex(
-        grouped_states=df_energies_group, energy_sort_col=energy_min_col
-    )
+    state_tex_dict = get_state_tex(states=plot_config_states)
 
     label_font_size = 10
     _, y_max = plt.gca().get_ylim()
     text_offset = y_max / 30
     for state_idx, state in enumerate(plot_config_states):
         text_height = (
-            list(
-                df_energies_group.loc[
-                    df_energies_group["state"] == state, t0_label
-                ].sort_values(ascending=True)
-            )[0]
+            energies.loc[energies["state"] == state, energy_col]
+            .sort_values(ascending=True)
+            .iloc[0]
             - text_offset
         )
         plt.text(
@@ -172,5 +177,7 @@ def plot_state_coverage(
     plt.ylabel("Energy (cm$^{-1}$)")
 
     plt.tight_layout()
-    plt.savefig(out_file)
-    plt.show()
+    if out_file is not None:
+        plt.savefig(out_file)
+    if show:
+        plt.show()
