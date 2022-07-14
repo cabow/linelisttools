@@ -110,7 +110,6 @@ def calc_hf_presence(
     # When the number of trans in the data frame is equal to the number of possible transitions, the scale factor
     # returned is 1. When only 1 of the possible transitions is present (provided more than 1 are possible, the scale
     # factor is 10. This relationship is linear relative to the fraction of possible transitions available.
-    print(hf_presence_scale_factor, possible_hf_trans, present_hf_trans)
     return 1 + (
         hf_presence_scale_factor
         * (possible_hf_trans - present_hf_trans)

@@ -33,19 +33,6 @@ def format_row(fortran_format_list: t.List, data_row: t.Tuple) -> str:
     return out_row
 
 
-# def output_fortran_format(data: pd.DataFrame, filename: str, fortran_format_list: list):
-#     with open(filename, 'w+') as f:
-#         for row in data.itertuples(index=False):
-#             out_row = ''
-#             for i in range(0, len(row)):
-#                 out_row = out_row + ' '
-#                 val = row[i]
-#                 fmt = fortran_format_list[i]
-#                 out_val = fortran_format(val=val, fmt=fmt)
-#                 out_row = out_row + out_val
-#             f.write(out_row + '\n')
-
-
 def fortran_format(val: str, fmt: str) -> str:
     fmt_letter = fmt[0]
     fmt = fmt[1:]
