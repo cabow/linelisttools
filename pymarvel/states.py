@@ -236,6 +236,8 @@ def predict_shifts(
     shift_table: pd.DataFrame,
     vib_qn_list: t.List[str] = None,
     show_plot: bool = False,
+    unc_col: str = "unc",
+    j_col: str = "J",
 ) -> pd.DataFrame:
     if vib_qn_list is not None:
         shift_table["v"] = shift_table.apply(
@@ -258,212 +260,26 @@ def predict_shifts(
         "#d1af86",
     ]
     for state in shift_table["state"].unique():
-        for v_idx, v in enumerate(
+        for v_idx, v_val in enumerate(
             shift_table.loc[shift_table["state"] == state, "v"].unique()
         ):
-            for Omega_idx, Omega in enumerate(
+            # TODO: Make omega iteration optional.
+            for omega_idx, omega in enumerate(
                 shift_table.loc[
-                    (shift_table["state"] == state) & (shift_table["v"] == v), "Omega"
+                    (shift_table["state"] == state) & (shift_table["v"] == v_val),
+                    "Omega",
                 ].unique()
             ):
-                shift_table_slice = shift_table.loc[
-                    (shift_table["state"] == state)
-                    & (shift_table["v"] == v)
-                    & (shift_table["Omega"] == Omega),
-                    ["j", "energy_dif_mean"],
-                ]
-
-                # j_min = shift_table_slice['j'].min()
-                j_max = shift_table_slice["j"].max()
-                j_segment_threshold = 14
-                j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
-                missing_j = np.array(
-                    np.setdiff1d(j_coverage_to_max, shift_table_slice["j"])
-                )
-                # if j_min != 0.5:
-                if len(missing_j) > 0:
-                    # print(f'STATE {state}, v={v}, Omega={Omega}, MIN J={j_min}')
-                    # print('MISSING J: ', missing_j)
-                    # j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
-                    # missing_j = np.array(np.setdiff1d(j_coverage_to_max, shift_table_slice['j']))
-
-                    delta_missing_j = np.abs(missing_j[1:] - missing_j[:-1])
-                    split_idx = np.where(delta_missing_j >= j_segment_threshold)[0] + 1
-                    missing_j_segments = np.array_split(missing_j, split_idx)
-                    if show_plot:
-                        # Plot the actual data:
-                        plt.scatter(
-                            shift_table_slice["j"],
-                            shift_table_slice["energy_dif_mean"],
-                            marker="x",
-                            linewidth=0.5,
-                            facecolors=colours[v_idx],
-                            label=f"{state} {v} {Omega}",
-                            zorder=1,
-                        )
-                    for j_segment in missing_j_segments:
-                        # If the segment is entirely within the slice then the wing size is half the threshold. This
-                        if (
-                            min(j_segment) > shift_table_slice["j"].min()
-                            and max(j_segment) < shift_table_slice["j"].max()
-                        ):
-                            segment_wing_size = int(j_segment_threshold / 2)
-                        else:
-                            segment_wing_size = int(j_segment_threshold)
-
-                        segment_j_lower_limit = max(
-                            0.5, min(j_segment) - segment_wing_size
-                        )
-                        segment_j_upper_limit = max(
-                            j_segment_threshold + 0.5,
-                            max(j_segment) + segment_wing_size,
-                        )
-                        segment_j_coverage = [
-                            x / 2
-                            for x in range(
-                                int(segment_j_lower_limit * 2),
-                                int((segment_j_upper_limit + 1) * 2),
-                                2,
-                            )
-                        ]
-                        # Huber regression - resist outliers.
-                        x_scaler, y_scaler = StandardScaler(), StandardScaler()
-                        x_train = x_scaler.fit_transform(
-                            np.array(
-                                shift_table_slice.loc[
-                                    (shift_table_slice["j"] >= segment_j_lower_limit)
-                                    & (shift_table_slice["j"] <= segment_j_upper_limit),
-                                    "j",
-                                ]
-                            )[..., None]
-                        )
-                        y_train = y_scaler.fit_transform(
-                            np.array(
-                                shift_table_slice.loc[
-                                    (shift_table_slice["j"] >= segment_j_lower_limit)
-                                    & (shift_table_slice["j"] <= segment_j_upper_limit),
-                                    "energy_dif_mean",
-                                ]
-                            )[..., None]
-                        )
-                        model = HuberRegressor(epsilon=1.35, max_iter=500)
-                        model.fit(x_train, y_train.ravel())
-                        segment_predictions = y_scaler.inverse_transform(
-                            model.predict(x_scaler.transform(j_segment[..., None]))
-                        )
-                        # Find the J we are making predictions for that we also have known energy_dif values for.
-                        segment_j_in_slice = np.array(
-                            np.intersect1d(segment_j_coverage, shift_table_slice["j"])
-                        )
-                        segment_j_outliers = np.array(
-                            shift_table_slice.loc[
-                                (shift_table_slice["j"].isin(segment_j_in_slice))
-                                & (
-                                    abs(
-                                        shift_table_slice["energy_dif_mean"]
-                                        - shift_table_slice["energy_dif_mean"].mean()
-                                    )
-                                    > (2 * shift_table_slice["energy_dif_mean"].std())
-                                ),
-                                "j",
-                            ]
-                        )
-                        segment_j_in_slice_no_outliers = np.setdiff1d(
-                            segment_j_in_slice, segment_j_outliers
-                        )
-                        # print('SEGMENT OUTLIERS: ', segment_j_outliers)
-
-                        # standard_error_of_estimate = mean_squared_error(
-                        #     shift_table_slice.loc[shift_table_slice['j'].isin(segment_j_in_slice_no_outliers),
-                        #                           'energy_dif_mean'],
-                        #     y_scaler.inverse_transform(model.predict(x_scaler.transform(
-                        #         segment_j_in_slice_no_outliers[..., None]))),
-                        #     squared=False)
-                        # print('STANDARD ERROR OF ESTIMATE: ', standard_error_of_estimate)
-                        real_energy = np.array(
-                            shift_table_slice.loc[
-                                shift_table_slice["j"].isin(
-                                    segment_j_in_slice_no_outliers
-                                ),
-                                "energy_dif_mean",
-                            ]
-                        )
-                        predicted_energy = y_scaler.inverse_transform(
-                            model.predict(
-                                x_scaler.transform(
-                                    segment_j_in_slice_no_outliers[..., None]
-                                )
-                            )
-                        )
-                        dif_energy = real_energy - predicted_energy
-                        dif_squared_energy = dif_energy**2
-                        std_energy = np.sqrt(sum(dif_squared_energy) / len(dif_energy))
-                        # print('STANDARD ERROR OF ESTIMATE: ', std_energy)
-
-                        if show_plot:
-                            # Plot for all predictions:
-                            # segment_predictions_all = y_scaler.inverse_transform(
-                            #     model.predict(x_scaler.transform(np.array(segment_j_coverage)[..., None]))
-                            # )
-                            # plt.scatter(segment_j_coverage, segment_predictions_all, marker='^', linewidth=0.5,
-                            #             edgecolors='#000000', facecolors='none', label=f'{state} {v} {Omega} FIT',
-                            #             zorder=2)
-                            # Plot for predictions of missing J:
-                            plt.scatter(
-                                j_segment,
-                                segment_predictions,
-                                marker="^",
-                                linewidth=0.5,
-                                edgecolors="#000000",
-                                facecolors="none",
-                                label=f"{state} {v} {Omega} FIT",
-                                zorder=2,
-                            )
-                            plt.legend(loc="upper left", prop={"size": 10})
-                            plt.xlabel("J")
-                            plt.ylabel("Obs.-Calc. (cm$^{-1}$)")
-
-                        for entry in [
-                            [state, v, Omega, j, prediction, std_energy]
-                            for j, prediction in zip(j_segment, segment_predictions)
-                        ]:
-                            shift_predicitions.append(entry)
-
-                    # plt.ylim(bottom=-1, top=1)
-                    if show_plot:
-                        plt.tight_layout()
-                        # plt.savefig(r'D:\PhD\AlO\AlO_PS_A2PI_6_0.5_FIT.jpg', dpi=800)
-                        plt.show()
-
-                    # print(shift_predicitions)
-                # Now take the mean of the last 10 points within 2std and take the mean shift there and apply it to
-                # all later trans.
-                shift_table_final_rows = (
-                    shift_table_slice.loc[
-                        abs(
-                            shift_table_slice["energy_dif_mean"]
-                            - shift_table_slice["energy_dif_mean"].mean()
-                        )
-                        < (2 * shift_table_slice["energy_dif_mean"].std())
-                    ]
-                    .sort_values(by="j", ascending=[1])
-                    .tail(j_segment_threshold)
-                )
-                extrapolate_j_shift_mean = shift_table_final_rows[
-                    "energy_dif_mean"
-                ].mean()
-                extrapolate_j_shift_std = shift_table_final_rows[
-                    "energy_dif_mean"
-                ].std()
-                extrapolate_j_shifts.append(
-                    [
-                        state,
-                        v,
-                        Omega,
-                        j_max,
-                        extrapolate_j_shift_mean,
-                        extrapolate_j_shift_std,
-                    ]
+                shift_predicitions, extrapolate_j_shifts = fit_predictions(
+                    shift_table=shift_table,
+                    shift_predicitions=shift_predicitions,
+                    extrapolate_j_shifts=extrapolate_j_shifts,
+                    colour=colours[v_idx],
+                    state=state,
+                    v=v_val,
+                    omega=omega,
+                    j_col=j_col,
+                    show_plot=True,
                 )
 
     if show_plot:
@@ -472,13 +288,13 @@ def predict_shifts(
     # Update energies with shift predictions:
     pe_fit_shifts = pd.DataFrame(
         data=shift_predicitions,
-        columns=["state", "v", "Omega", "j", "pe_fit_energy_shift", "pe_fit_unc"],
+        columns=["state", "v", "Omega", j_col, "pe_fit_energy_shift", "pe_fit_unc"],
     )
 
     levels_matched = levels_matched.merge(
         pe_fit_shifts,
-        left_on=["state", "v", "Omega", "j"],
-        right_on=["state", "v", "Omega", "j"],
+        left_on=["state", "v", "Omega", j_col],
+        right_on=["state", "v", "Omega", j_col],
         how="left",
     )
 
@@ -490,12 +306,12 @@ def predict_shifts(
         & (~levels_matched["energy_calc"].isna()),
         "source_tag",
     ] = "PS_2"
-
+    # TODO: Change to fills/where statements.
     levels_matched.loc[
         (levels_matched["energy_final"].isna())
         & (~levels_matched["pe_fit_energy_shift"].isna())
         & (~levels_matched["energy_calc"].isna()),
-        "unc",
+        unc_col,
     ] = levels_matched.loc[
         (levels_matched["energy_final"].isna())
         & (~levels_matched["pe_fit_energy_shift"].isna())
@@ -521,13 +337,14 @@ def predict_shifts(
     del levels_matched["pe_fit_unc"]
 
     # Update energies with higher-J shift extrapolations:
+    j_max_col = j_col + "_max"
     pe_extrapolate_shifts = pd.DataFrame(
         data=extrapolate_j_shifts,
         columns=[
             "state",
             "v",
             "Omega",
-            "j_max",
+            j_max_col,
             "pe_extrapolate_energy_shift",
             "pe_extrapolate_energy_shift_std",
         ],
@@ -540,12 +357,11 @@ def predict_shifts(
         right_on=["state", "v", "Omega"],
         how="left",
     )
-
     levels_matched.loc[
         (levels_matched["energy_final"].isna())
-        & (~levels_matched["j_max"].isna())
+        & (~levels_matched[j_max_col].isna())
         & (~levels_matched["energy_calc"].isna())
-        & (levels_matched["j"] > levels_matched["j_max"]),
+        & (levels_matched[j_col] > levels_matched[j_max_col]),
         "source_tag",
     ] = "PS_3"
     # print('PS_3 LEVELS: \n', levels_matched.loc[levels_matched['source_tag'] == 'PS_3'])
@@ -557,19 +373,19 @@ def predict_shifts(
     #     if math.isnan(x['energy_final']) and not math.isnan(x['energy_calc']) and not math.isnan(x['j_max'])
     #        and x['j'] > x['j_max'] else x['unc'], axis=1)
 
-    levels_matched["unc"] = levels_matched.apply(
-        lambda x: scale_uncertainty2(
+    levels_matched[unc_col] = levels_matched.apply(
+        lambda x: set_pseudo_experimental_unc(
             std=x["pe_extrapolate_energy_shift_std"],
             a=0.0001,
             b=0.05,
-            j_val=x["j"],
-            j_max=x["j_max"],
+            j_val=x[j_col],
+            j_max=x[j_max_col],
         )
         if math.isnan(x["energy_final"])
         and not math.isnan(x["energy_calc"])
-        and not math.isnan(x["j_max"])
-        and x["j"] > x["j_max"]
-        else x["unc"],
+        and not math.isnan(x[j_max_col])
+        and x[j_col] > x[j_max_col]
+        else x[unc_col],
         axis=1,
     )
 
@@ -605,14 +421,14 @@ def predict_shifts(
 
     levels_matched["energy_final"] = np.where(
         (levels_matched["energy_final"].isna())
-        & (~levels_matched["j_max"].isna())
+        & (~levels_matched[j_max_col].isna())
         & (~levels_matched["energy_calc"].isna())
-        & (levels_matched["j"] > levels_matched["j_max"]),
+        & (levels_matched[j_col] > levels_matched[j_max_col]),
         levels_matched["energy_calc"] + levels_matched["pe_extrapolate_energy_shift"],
         levels_matched["energy_final"],
     )
 
-    del levels_matched["j_max"]
+    del levels_matched[j_max_col]
     del levels_matched["pe_extrapolate_energy_shift"]
     del levels_matched["pe_extrapolate_energy_shift_std"]
 
@@ -634,7 +450,7 @@ def predict_shifts(
     )
     shift_table_full_j = shift_table_full_j.append(pe_fit_shifts)
     shift_table_full_j = shift_table_full_j.sort_values(
-        by=["state", "v", "Omega", "j"], ascending=[1, 1, 1, 1]
+        by=["state", "v", "Omega", j_col], ascending=[1, 1, 1, 1]
     )
 
     pe_extrapolate_shifts = pe_extrapolate_shifts.rename(
@@ -645,3 +461,203 @@ def predict_shifts(
     )
 
     return levels_matched
+
+
+def fit_predictions(
+    shift_table: pd.DataFrame,
+    shift_predicitions: t.List[t.List],
+    extrapolate_j_shifts: t.List[t.List],
+    colour: str,
+    state: str,
+    v: str,
+    omega: str = None,
+    j_segment_threshold_size: int = 14,
+    j_col: str = "J",
+    show_plot: bool = False,
+):
+    shift_table_slice = shift_table.loc[
+        (shift_table["state"] == state)
+        & (shift_table["v"] == v)
+        & (shift_table["Omega"] == omega),
+        [j_col, "energy_dif_mean"],
+    ]
+
+    # j_min = shift_table_slice['j'].min()
+    j_max = shift_table_slice[j_col].max()
+    j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
+    missing_j = np.array(np.setdiff1d(j_coverage_to_max, shift_table_slice[j_col]))
+    # if j_min != 0.5:
+    if len(missing_j) > 0:
+        # print(f'STATE {state}, v={v}, Omega={Omega}, MIN J={j_min}')
+        # print('MISSING J: ', missing_j)
+        # j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
+        # missing_j = np.array(np.setdiff1d(j_coverage_to_max, shift_table_slice['j']))
+
+        delta_missing_j = np.abs(missing_j[1:] - missing_j[:-1])
+        split_idx = np.where(delta_missing_j >= j_segment_threshold_size)[0] + 1
+        missing_j_segments = np.array_split(missing_j, split_idx)
+        if show_plot:
+            # Plot the actual data:
+            plt.scatter(
+                shift_table_slice[j_col],
+                shift_table_slice["energy_dif_mean"],
+                marker="x",
+                linewidth=0.5,
+                facecolors=colour,
+                label=f"{state} {v} {omega}",
+                zorder=1,
+            )
+        for j_segment in missing_j_segments:
+            # If the segment is entirely within the slice then the wing size is half the threshold. This
+            if (
+                min(j_segment) > shift_table_slice[j_col].min()
+                and max(j_segment) < shift_table_slice[j_col].max()
+            ):
+                segment_wing_size = int(j_segment_threshold_size / 2)
+            else:
+                segment_wing_size = int(j_segment_threshold_size)
+
+            segment_j_lower_limit = max(0.5, min(j_segment) - segment_wing_size)
+            segment_j_upper_limit = max(
+                j_segment_threshold_size + 0.5,
+                max(j_segment) + segment_wing_size,
+            )
+            segment_j_coverage = [
+                x / 2
+                for x in range(
+                    int(segment_j_lower_limit * 2),
+                    int((segment_j_upper_limit + 1) * 2),
+                    2,
+                )
+            ]
+            # Huber regression - resist outliers.
+            x_scaler, y_scaler = StandardScaler(), StandardScaler()
+            x_train = x_scaler.fit_transform(
+                np.array(
+                    shift_table_slice.loc[
+                        (shift_table_slice[j_col] >= segment_j_lower_limit)
+                        & (shift_table_slice[j_col] <= segment_j_upper_limit),
+                        j_col,
+                    ]
+                )[..., None]
+            )
+            y_train = y_scaler.fit_transform(
+                np.array(
+                    shift_table_slice.loc[
+                        (shift_table_slice[j_col] >= segment_j_lower_limit)
+                        & (shift_table_slice[j_col] <= segment_j_upper_limit),
+                        "energy_dif_mean",
+                    ]
+                )[..., None]
+            )
+            model = HuberRegressor(epsilon=1.35, max_iter=500)
+            model.fit(x_train, y_train.ravel())
+            segment_predictions = y_scaler.inverse_transform(
+                model.predict(x_scaler.transform(j_segment[..., None]))
+            )
+            # Find the J we are making predictions for that we also have known energy_dif values for.
+            segment_j_in_slice = np.array(
+                np.intersect1d(segment_j_coverage, shift_table_slice[j_col])
+            )
+            segment_j_outliers = np.array(
+                shift_table_slice.loc[
+                    (shift_table_slice[j_col].isin(segment_j_in_slice))
+                    & (
+                        abs(
+                            shift_table_slice["energy_dif_mean"]
+                            - shift_table_slice["energy_dif_mean"].mean()
+                        )
+                        > (2 * shift_table_slice["energy_dif_mean"].std())
+                    ),
+                    j_col,
+                ]
+            )
+            segment_j_in_slice_no_outliers = np.setdiff1d(
+                segment_j_in_slice, segment_j_outliers
+            )
+            # print('SEGMENT OUTLIERS: ', segment_j_outliers)
+
+            # standard_error_of_estimate = mean_squared_error(
+            #     shift_table_slice.loc[shift_table_slice['j'].isin(segment_j_in_slice_no_outliers),
+            #                           'energy_dif_mean'],
+            #     y_scaler.inverse_transform(model.predict(x_scaler.transform(
+            #         segment_j_in_slice_no_outliers[..., None]))),
+            #     squared=False)
+            # print('STANDARD ERROR OF ESTIMATE: ', standard_error_of_estimate)
+            real_energy = np.array(
+                shift_table_slice.loc[
+                    shift_table_slice[j_col].isin(segment_j_in_slice_no_outliers),
+                    "energy_dif_mean",
+                ]
+            )
+            predicted_energy = y_scaler.inverse_transform(
+                model.predict(
+                    x_scaler.transform(segment_j_in_slice_no_outliers[..., None])
+                )
+            )
+            dif_energy = real_energy - predicted_energy
+            dif_squared_energy = dif_energy**2
+            std_energy = np.sqrt(sum(dif_squared_energy) / len(dif_energy))
+            # print('STANDARD ERROR OF ESTIMATE: ', std_energy)
+
+            if show_plot:
+                # Plot for all predictions:
+                # segment_predictions_all = y_scaler.inverse_transform(
+                #     model.predict(x_scaler.transform(np.array(segment_j_coverage)[..., None]))
+                # )
+                # plt.scatter(segment_j_coverage, segment_predictions_all, marker='^', linewidth=0.5,
+                #             edgecolors='#000000', facecolors='none', label=f'{state} {v} {Omega} FIT',
+                #             zorder=2)
+                # Plot for predictions of missing J:
+                plt.scatter(
+                    j_segment,
+                    segment_predictions,
+                    marker="^",
+                    linewidth=0.5,
+                    edgecolors="#000000",
+                    facecolors="none",
+                    label=f"{state} {v} {omega} FIT",
+                    zorder=2,
+                )
+                plt.legend(loc="upper left", prop={"size": 10})
+                plt.xlabel(j_col)
+                plt.ylabel("Obs.-Calc. (cm$^{-1}$)")
+
+            for entry in [
+                [state, v, omega, j, prediction, std_energy]
+                for j, prediction in zip(j_segment, segment_predictions)
+            ]:
+                shift_predicitions.append(entry)
+
+        # plt.ylim(bottom=-1, top=1)
+        if show_plot:
+            plt.tight_layout()
+            plt.show()
+
+        # print(shift_predicitions)
+    # Now take the mean of the last 10 points within 2std and take the mean shift there and apply it to
+    # all later trans.
+    shift_table_final_rows = (
+        shift_table_slice.loc[
+            abs(
+                shift_table_slice["energy_dif_mean"]
+                - shift_table_slice["energy_dif_mean"].mean()
+            )
+            < (2 * shift_table_slice["energy_dif_mean"].std())
+        ]
+        .sort_values(by=j_col, ascending=[1])
+        .tail(j_segment_threshold_size)
+    )
+    extrapolate_j_shift_mean = shift_table_final_rows["energy_dif_mean"].mean()
+    extrapolate_j_shift_std = shift_table_final_rows["energy_dif_mean"].std()
+    extrapolate_j_shifts.append(
+        [
+            state,
+            v,
+            omega,
+            j_max,
+            extrapolate_j_shift_mean,
+            extrapolate_j_shift_std,
+        ]
+    )
+    return shift_predicitions, extrapolate_j_shifts
