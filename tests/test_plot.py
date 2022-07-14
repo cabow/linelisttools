@@ -84,7 +84,7 @@ def test_plot_state_coverage(
         colours=colours,
         show=False,
         out_file=temp_plot_output,
-        plot_type=PlotType.VIOLIN,
+        # plot_type=PlotType.VIOLIN,
         electron_configurations=electron_configurations,
         energy_col=energy_col,
     )

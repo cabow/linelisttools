@@ -44,6 +44,8 @@ def plot_state_coverage(
     electron_configurations: t.List[str] = None,
     energy_col: str = "energy",
 ):
+    # TODO: Test inbuilt sizes/shifts (i.e.: labelpad) or different scale plots. Allow for plotting without electronic
+    #  configuration.
     if out_file is None and not show:
         raise RuntimeError(
             "No out_file specified and show set to False - nothing to do."
@@ -63,7 +65,7 @@ def plot_state_coverage(
             )
         )
 
-    print("Electron config order: ", plot_config_list)
+    # print("Electron config order: ", plot_config_list)
 
     plot_config_states = [
         state
@@ -71,26 +73,26 @@ def plot_state_coverage(
         for state, config in state_configuration_dict.items()
         if config == plot_config and not state.endswith("_P")
     ]
-    print("Energy ordered states by electron config order", plot_config_states)
+    # print("Energy ordered states by electron config order", plot_config_states)
 
     plot_config_ticks = [
         state_configuration_dict.get(state) for state in plot_config_states
     ]
-    print(plot_config_ticks)
+    # print(plot_config_ticks)
     plot_config_tick_min_dict = {
         plot_config: min(
             idx for idx, val in enumerate(plot_config_ticks) if val == plot_config
         )
         for plot_config in plot_config_list
     }
-    print(plot_config_tick_min_dict)
+    # print(plot_config_tick_min_dict)
     plot_config_tick_max_dict = {
         plot_config: max(
             idx for idx, val in enumerate(plot_config_ticks) if val == plot_config
         )
         for plot_config in plot_config_list
     }
-    print(plot_config_tick_max_dict)
+    # print(plot_config_tick_max_dict)
     plot_config_tick_mid_dict = {
         plot_config: np.mean(
             [
@@ -100,7 +102,7 @@ def plot_state_coverage(
         )
         for plot_config in plot_config_list
     }
-    print(plot_config_tick_mid_dict)
+    # print(plot_config_tick_mid_dict)
 
     plot_colours = list(islice(cycle(colours), len(plot_config_states)))
 
