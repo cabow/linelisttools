@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import tqdm
 
+from pymarvel.concurrence import yield_grouped_data
+
 
 def calc_weighted_mean_energy(
     energy_list: t.List[float], weight_list: t.List[float]
@@ -196,9 +198,9 @@ def calc_deperturbation(
     return out_list
 
 
-def yield_transition_group(grouped_data):
-    for group_name, df_group in grouped_data:
-        yield group_name, df_group
+# def yield_transition_group(grouped_data):
+#     for group_name, df_group in grouped_data:
+#         yield group_name, df_group
 
 
 def deperturb_hyperfine(
@@ -272,9 +274,7 @@ def deperturb_hyperfine(
 
     deperturbed_list = []
     with ThreadPoolExecutor(max_workers=n_workers) as e:
-        for result in tqdm.tqdm(
-            e.map(worker, yield_transition_group(transitions_grouped))
-        ):
+        for result in tqdm.tqdm(e.map(worker, yield_grouped_data(transitions_grouped))):
             deperturbed_list.append(result)
 
     # TODO: Create arg to determine if present/possible hf trans are kept?

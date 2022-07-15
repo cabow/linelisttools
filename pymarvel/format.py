@@ -7,11 +7,11 @@ import pandas as pd
 
 
 class SourceTag(Enum):
-    CALCULATED: str = "Ca"
-    MARVELISED: str = "Ma"
-    EFFECTIVE_HAMILTONIAN: str = "EH"
-    PREDICTED_SHIFT: str = "PS"
-    PSEUDO_EXPERIMENTAL: str = "PE"
+    CALCULATED = "Ca"
+    MARVELISED = "Ma"
+    EFFECTIVE_HAMILTONIAN = "EH"
+    PREDICTED_SHIFT = "PS"
+    PSEUDO_EXPERIMENTAL = "PE"
 
 
 def output_data(
