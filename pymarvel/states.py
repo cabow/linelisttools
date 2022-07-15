@@ -1,7 +1,6 @@
 import functools
 import math
 import typing as t
-from typing import Any, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,7 +26,7 @@ def read_mvl_energies(
     return pd.read_csv(file, sep=r"\s+", names=mvl_energy_cols)
 
 
-def propagate_error_in_mean(unc_list: list) -> float:
+def propagate_error_in_mean(unc_list: t.List[float]) -> float:
     unc_sq_list = [unc**2 for unc in unc_list]
     sum_unc_sq = sum(unc_sq_list)
     sqrt_sum_unc_sq = math.sqrt(sum_unc_sq)
@@ -234,7 +233,7 @@ def set_pseudo_experimental_unc(
     j_max: float = 0,
     v_val: float = 0,
     v_max: float = 0,
-):
+) -> float:
     j_dif = max(0, int(j_val - j_max)) if j_val != 0 and j_max != 0 else 0
     v_dif = max(0, int(v_val - v_max)) if v_val != 0 and v_max != 0 else 0
     unc_extrapolated = estimate_uncertainty(j_dif, v_dif, a, b)
@@ -314,46 +313,18 @@ def predict_shifts(
         & (~levels_matched["energy_calc"].isna()),
         source_tag_col,
     ] = "PS_2"
-    # TODO: Change to fills/where statements.
-    # levels_matched.loc[
-    #     (levels_matched["energy_final"].isna())
-    #     & (~levels_matched["pe_fit_energy_shift"].isna())
-    #     & (~levels_matched["energy_calc"].isna()),
-    #     unc_col,
-    # ] = levels_matched.loc[
-    #     (levels_matched["energy_final"].isna())
-    #     & (~levels_matched["pe_fit_energy_shift"].isna())
-    #     & (~levels_matched["energy_calc"].isna()),
-    #     "pe_fit_unc",
-    # ]
     levels_matched[unc_col] = np.where(
         levels_matched[source_tag_col] == "PS_2",
         levels_matched["pe_fit_unc"],
         levels_matched[unc_col],
     )
-
-    # levels_matched.loc[
-    #     (levels_matched["energy_final"].isna())
-    #     & (~levels_matched["pe_fit_energy_shift"].isna())
-    #     & (~levels_matched["energy_calc"].isna()),
-    #     "energy_final",
-    # ] = levels_matched.loc[
-    #     (levels_matched["energy_final"].isna())
-    #     & (~levels_matched["pe_fit_energy_shift"].isna())
-    #     & (~levels_matched["energy_calc"].isna()),
-    #     ["energy_calc", "pe_fit_energy_shift"],
-    # ].apply(
-    #     lambda x: x["energy_calc"] + x["pe_fit_energy_shift"], axis=1
-    # )
     levels_matched["energy_final"] = np.where(
         levels_matched[source_tag_col] == "PS_2",
         levels_matched["energy_calc"] + levels_matched["pe_fit_energy_shift"],
         levels_matched["energy_final"],
     )
-
     del levels_matched["pe_fit_energy_shift"]
     del levels_matched["pe_fit_unc"]
-
     print("PS_2: \n", levels_matched.loc[levels_matched[source_tag_col] == "PS_2"])
 
     # Update energies with higher-J shift extrapolations:
@@ -380,15 +351,12 @@ def predict_shifts(
         & (levels_matched[j_col] > levels_matched[j_max_col]),
         source_tag_col,
     ] = "PS_3"
-    # print('PS_3 LEVELS: \n', levels_matched.loc[levels_matched[source_tag_col] == 'PS_3'])
-
     # Scale unc based on j over j_max.
     # levels_matched['unc'] = levels_matched.apply(
     #     lambda x: scale_uncertainty(std=x['pe_extrapolate_energy_shift_std'], std_scale=2, j_val=x['j'],
     #                                 j_max=x['j_max'], j_scale=0.05)
     #     if math.isnan(x['energy_final']) and not math.isnan(x['energy_calc']) and not math.isnan(x['j_max'])
     #        and x['j'] > x['j_max'] else x['unc'], axis=1)
-
     levels_matched[unc_col] = levels_matched.apply(
         lambda x: set_pseudo_experimental_unc(
             std=x["pe_extrapolate_energy_shift_std"],
@@ -404,9 +372,6 @@ def predict_shifts(
         if x[source_tag_col] == "PS_3" else x[unc_col],
         axis=1,
     )
-
-    print("PS_3: \n", levels_matched.loc[levels_matched[source_tag_col] == "PS_3"])
-
     levels_matched["energy_final"] = np.where(
         # (levels_matched["energy_final"].isna())
         # & (~levels_matched[j_max_col].isna())
@@ -416,10 +381,10 @@ def predict_shifts(
         levels_matched["energy_calc"] + levels_matched["pe_extrapolate_energy_shift"],
         levels_matched["energy_final"],
     )
-
     del levels_matched[j_max_col]
     del levels_matched["pe_extrapolate_energy_shift"]
     del levels_matched["pe_extrapolate_energy_shift_std"]
+    print("PS_3: \n", levels_matched.loc[levels_matched[source_tag_col] == "PS_3"])
 
     # UNNECESSARY IF NOT OUTPUTTING THESE DATAFRAMES.
     # Add shift predictions to shift table.
@@ -448,7 +413,6 @@ def predict_shifts(
     #         "pe_extrapolate_energy_shift_std": "extrapolation_energy_unc",
     #     }
     # )
-
     return levels_matched
 
 
@@ -793,3 +757,69 @@ def old_fit_predictions(
         ]
     )
     return shift_predictions, extrapolate_j_shifts
+
+
+def set_calc_states(
+    states: pd.DataFrame,
+    unc_j_factor: float = 0.0001,
+    unc_v_factor: float = 0.05,
+    source_tag_col: str = "source_tag",
+    unc_col: str = "unc",
+    j_col: str = "J",
+    v_col: str = "v",
+    energy_final_col: str = "energy_final",
+    energy_calc_col: str = "energy_calc",
+) -> pd.DataFrame:
+    """
+    Updates all states with no assigned source tag to Calculated and estimates their uncertainty with the function
+    :func:`~pymarvel.states.estimate_uncertainty`. Currently, only works for diatomic state files given the v scaling in
+    the uncertainty estimator.
+
+    Args:
+        states:           A DataFrame containing all states, those of which without a source_tag set will be updated to calculated.
+        unc_j_factor:     The uncertainty scale factor for the J term passed to :func:`~pymarvel.states.estimate_uncertainty`.
+        unc_v_factor:     The uncertainty scale factor for the v term passed to :func:`~pymarvel.states.estimate_uncertainty`.
+        source_tag_col:   The string label for the source tag column in states.
+        unc_col:          The string label for the uncertainty column in states.
+        j_col:            The string label for the J column in states.
+        v_col:            The string label for the v column in states.
+        energy_final_col: The string label for the final energy column in states.
+        energy_calc_col:  The string label for the calculated energy column in states.
+
+    Returns:
+        A DataFrame where all input states without a source tag assigned have been set to Calculated and had their uncertainty estimated.
+    """
+    # v_limit_states = states.loc[states[source_tag_col] == source_tag_v_limiter, 'state'].unique()
+    # for state in v_limit_states:
+    #     update_v_max = states.loc[(states[source_tag_col] == source_tag_v_limiter)
+    #                               & (states['state'] == state), v_col].max()
+    #     states.loc[(states[source_tag_col].isna()) & (states['state'] == state)
+    #                & (states[v_col] > update_v_max), source_tag_col] = SourceTag.CALCULATED.value
+    # states.loc[(states[source_tag_col].isna()) & (~states['state'].isin(v_limit_states)),
+    #            source_tag_col] = SourceTag.CALCULATED.value
+    # states[energy_final_col] = np.where(states[source_tag_col] == SourceTag.CALCULATED.value,
+    #                                   states[energy_calc_col], states[energy_final_col])
+
+    # The above previous implementation only set states to Calculated if either the electronic state had no marvel
+    # levels, or vibrational bands of electronic states that were beyond the marvel coverage. This was intended to be
+    # agnostic to the order in which states are updated (i.e.: are predicted shifts determined before or after
+    # calculated levels are set) but I feel it makes more sense to ensure this is done as the last step to catch the
+    # remaining states left unchanged.
+    states[source_tag_col] = np.where(
+        states[source_tag_col].isna(),
+        SourceTag.CALCULATED.value,
+        states[source_tag_col],
+    )
+    states[energy_final_col] = np.where(
+        states[source_tag_col] == SourceTag.CALCULATED.value,
+        states[energy_calc_col],
+        states[energy_final_col],
+    )
+    states[unc_col] = states.apply(
+        lambda x: estimate_uncertainty(x[j_col], x[v_col], unc_j_factor, unc_v_factor)
+        if x[source_tag_col] == SourceTag.CALCULATED.value
+        else x[unc_col],
+        axis=1,
+    )
+
+    return states
