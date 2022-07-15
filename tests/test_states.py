@@ -6,7 +6,13 @@ import pytest
 
 from pymarvel.concurrence import ExecutorType
 from pymarvel.format import SourceTag
-from pymarvel.states import match_levels, predict_shifts, read_mvl_energies
+from pymarvel.states import (
+    match_levels,
+    predict_shifts,
+    read_mvl_energies,
+    set_calc_states,
+    shift_parity_pairs,
+)
 
 
 @pytest.fixture(scope="session")
@@ -23,7 +29,7 @@ def alo_states_file():
 
 @pytest.mark.parametrize(
     "marvel_qn_cols, qn_match_cols, match_source_tag, shift_table_qn_cols, levels_new_qn_cols, suffixes, "
-    "energy_col, unc_col, j_col, source_tag_col,is_isotopologue_match, overwrite_non_match_qn_cols",
+    "energy_col, unc_col, j_col, source_tag_col, id_col, is_isotopologue_match, overwrite_non_match_qn_cols",
     [
         (
             ["state", "v", "J", "N", "fs", "parity"],
@@ -36,12 +42,13 @@ def alo_states_file():
             "unc",
             "J",
             "source_tag",
+            "ID",
             False,
             False,
         )
     ],
 )
-def test_alo_match_levels(
+def test_alo_states(
     alo_marvel_energies_file,
     marvel_qn_cols,
     alo_states_file,
@@ -56,6 +63,7 @@ def test_alo_match_levels(
     source_tag_col,
     is_isotopologue_match,
     overwrite_non_match_qn_cols,
+    id_col,
 ):
     pd.set_option("display.max_columns", None)
     levels_new = read_mvl_energies(alo_marvel_energies_file, marvel_qn_cols)
@@ -91,10 +99,10 @@ def test_alo_match_levels(
         alo_states_file,
         delim_whitespace=True,
         names=[
-            "id",
-            "energy",
+            id_col,
+            energy_col,
             "degeneracy",
-            "J",
+            j_col,
             "lifetime",
             "parity",
             "parity_norot",
@@ -105,7 +113,7 @@ def test_alo_match_levels(
             "Omega",
         ],
     )
-    matched_levels, shift_table = match_levels(
+    matched_states, shift_table = match_levels(
         levels_initial=levels_initial,
         levels_new=levels_new,
         qn_match_cols=qn_match_cols,
@@ -113,16 +121,17 @@ def test_alo_match_levels(
         shift_table_qn_cols=shift_table_qn_cols,
         levels_new_qn_cols=levels_new_qn_cols,
         suffixes=suffixes,
-        energy_col_name=energy_col,
-        unc_col_name=unc_col,
+        energy_col=energy_col,
+        unc_col=unc_col,
         source_tag_col=source_tag_col,
+        id_col=id_col,
         is_isotopologue_match=is_isotopologue_match,
         overwrite_non_match_qn_cols=overwrite_non_match_qn_cols,
     )
-    print(matched_levels)
+    print(matched_states)
     shift_table_qn_cols.remove(j_col)
-    matched_levels = predict_shifts(
-        levels_matched=matched_levels,
+    matched_states = predict_shifts(
+        levels_matched=matched_states,
         shift_table=shift_table,
         fit_qn_list=shift_table_qn_cols,
         j_segment_threshold_size=14,
@@ -133,4 +142,29 @@ def test_alo_match_levels(
         executor_type=ExecutorType.THREADS,
         n_workers=8,
     )
-    print(matched_levels)
+    print(matched_states)
+    energy_final_col = energy_col + "_final"
+    energy_calc_col = energy_col + "_calc"
+    matched_states = shift_parity_pairs(
+        states=matched_states,
+        shift_table=shift_table,
+        source_tag_col=source_tag_col,
+        unc_col=unc_col,
+        id_col=id_col,
+        energy_final_col=energy_final_col,
+        energy_calc_col=energy_calc_col,
+    )
+    matched_states = set_calc_states(
+        states=matched_states,
+        unc_j_factor=0.0001,
+        unc_v_factor=0.05,
+        source_tag_col=source_tag_col,
+        unc_col=unc_col,
+        j_col=j_col,
+        v_col="v",
+        energy_final_col=energy_final_col,
+        energy_calc_col=energy_calc_col,
+    )
+    matched_states = matched_states.sort_values(by=[j_col, "parity", energy_final_col])
+    matched_states[id_col] = np.arange(1, len(matched_states) + 1)
+    print(matched_states)

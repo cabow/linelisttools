@@ -42,9 +42,10 @@ def match_levels(
     shift_table_qn_cols: t.List[str],
     levels_new_qn_cols: t.List[str] = None,
     suffixes: t.Tuple[str, str] = None,
-    energy_col_name: str = "energy",
-    unc_col_name: str = "unc",
+    energy_col: str = "energy",
+    unc_col: str = "unc",
     source_tag_col: str = "source_tag",
+    id_col: str = "ID",
     is_isotopologue_match: bool = False,
     overwrite_non_match_qn_cols: bool = False,
 ) -> t.Tuple[pd.DataFrame, pd.DataFrame]:
@@ -72,9 +73,9 @@ def match_levels(
         )
         # TODO: Change to error, or add input fail_on_no_matches?
 
-    energy_original_col = energy_col_name + suffixes[0]
-    energy_marvel_col = energy_col_name + suffixes[1]
-    energy_dif_col = energy_col_name + "_dif"
+    energy_original_col = energy_col + suffixes[0]
+    energy_marvel_col = energy_col + suffixes[1]
+    energy_dif_col = energy_col + "_dif"
     energy_dif_mag_col = energy_dif_col + "_mag"
 
     levels_matched[energy_dif_col] = levels_matched.apply(
@@ -153,7 +154,7 @@ def match_levels(
         ]
         # Rename energy_col_name in the rows to be concatenated to energy_marvel_col to avoid creating a new column.
         levels_new_to_concat = levels_new_to_concat.rename(
-            columns={energy_col_name: energy_marvel_col}
+            columns={energy_col: energy_marvel_col}
         )
         if len(qn_cols_not_match) > 0:
             levels_new_to_concat = levels_new_to_concat.rename(
@@ -177,7 +178,7 @@ def match_levels(
             lambda x: pd.Series(
                 {
                     "energy_dif_mean": np.average(x[energy_dif_col]),
-                    "energy_dif_unc": propagate_error_in_mean(x[unc_col_name]),
+                    "energy_dif_unc": propagate_error_in_mean(x[unc_col]),
                 }
             )
         )
@@ -185,13 +186,11 @@ def match_levels(
     print("SHIFT TABLE: \n", shift_table)
 
     # Rename original levels' energy to match the column name in levels_matched
-    levels_initial = levels_initial.rename(
-        columns={energy_col_name: energy_original_col}
-    )
+    levels_initial = levels_initial.rename(columns={energy_col: energy_original_col})
     # Add missing original levels that are not in the final matching set
     # levels_matched = levels_matched.append(levels_initial.loc[~levels_initial['id'].isin(levels_matched['id'])])
     levels_initial_to_concat = levels_initial.loc[
-        ~levels_initial["id"].isin(levels_matched["id"])
+        ~levels_initial[id_col].isin(levels_matched[id_col])
     ]
     if len(qn_cols_not_match) > 0:
         levels_initial_to_concat = levels_initial_to_concat.rename(
@@ -199,11 +198,11 @@ def match_levels(
         )
 
     if (
-        unc_col_name in levels_initial_to_concat.columns
-        and unc_col_name + suffixes[0] in levels_matched.columns
+        unc_col in levels_initial_to_concat.columns
+        and unc_col + suffixes[0] in levels_matched.columns
     ):
         levels_initial_to_concat = levels_initial_to_concat.rename(
-            columns={unc_col_name: unc_col_name + suffixes[0]}
+            columns={unc_col: unc_col + suffixes[0]}
         )
 
     levels_matched = pd.concat([levels_matched, levels_initial_to_concat])
@@ -252,15 +251,12 @@ def predict_shifts(
     executor_type: ExecutorType = ExecutorType.THREADS,
     n_workers: int = 8,
 ) -> pd.DataFrame:
-    from time import time
-
-    if fit_qn_list is not None:
-        shift_table["fit_qn"] = shift_table.apply(
-            lambda x: "|".join(str(x[qn]) for qn in fit_qn_list), axis=1
-        )
+    # if fit_qn_list is not None:
+    #     shift_table["fit_qn"] = shift_table.apply(
+    #         lambda x: "|".join(str(x[qn]) for qn in fit_qn_list), axis=1
+    #     )
     shift_predictions = []
     extrapolate_j_shifts = []
-    # start_time = time() * 1000.0
     # for fit_qn in shift_table["fit_qn"].unique():
     #     shift_predictions, extrapolate_j_shifts = old_fit_predictions(
     #         shift_table=shift_table,
@@ -272,14 +268,10 @@ def predict_shifts(
     #         j_col=j_col,
     #         show_plot=show_plot,
     #     )
-    # end_time = time() * 1000.0
-    # print(f"elapsed time (ms) = {end_time - start_time}")
-    # print(f"length of predictions = {len(shift_predictions)}, extrapolations = {len(extrapolate_j_shifts)}")
 
     worker = functools.partial(
         fit_predictions, "#8b4513", j_segment_threshold_size, j_col, show_plot
     )
-    start_time = time() * 1000.0
     shift_groups = shift_table.groupby(by=fit_qn_list)
     with executor_type.value(max_workers=n_workers) as e:
         for result in tqdm.tqdm(
@@ -289,11 +281,6 @@ def predict_shifts(
             extrapolate_j_shifts.append(result[1])
     shift_predictions = [item for items in shift_predictions for item in items]
     extrapolate_j_shifts = [item for items in extrapolate_j_shifts for item in items]
-    end_time = time() * 1000.0
-    print(f"elapsed time (ms) = {end_time - start_time}")
-    print(
-        f"length of predictions = {len(shift_predictions)}, extrapolations = {len(extrapolate_j_shifts)}"
-    )
 
     # Update energies with shift predictions:
     pe_fit_shifts = pd.DataFrame(
