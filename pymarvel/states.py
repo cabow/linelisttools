@@ -365,18 +365,11 @@ def predict_shifts(
             j_val=x[j_col],
             j_max=x[j_max_col],
         )
-        # if math.isnan(x["energy_final"])
-        # and not math.isnan(x["energy_calc"])
-        # and not math.isnan(x[j_max_col])
-        # and x[j_col] > x[j_max_col]
-        if x[source_tag_col] == "PS_3" else x[unc_col],
+        if x[source_tag_col] == "PS_3"
+        else x[unc_col],
         axis=1,
     )
     levels_matched["energy_final"] = np.where(
-        # (levels_matched["energy_final"].isna())
-        # & (~levels_matched[j_max_col].isna())
-        # & (~levels_matched["energy_calc"].isna())
-        # & (levels_matched[j_col] > levels_matched[j_max_col]),
         levels_matched[source_tag_col] == "PS_3",
         levels_matched["energy_calc"] + levels_matched["pe_extrapolate_energy_shift"],
         levels_matched["energy_final"],
@@ -824,4 +817,90 @@ def set_calc_states(
         axis=1,
     )
 
+    return states
+
+
+def shift_parity_pairs(
+    states: pd.DataFrame,
+    shift_table: pd.DataFrame,
+    source_tag_col: str = "source_tag",
+    unc_col: str = "unc",
+    id_col: str = "ID",
+    energy_final_col: str = "energy_final",
+    energy_calc_col: str = "energy_calc",
+) -> pd.DataFrame:
+    """
+    Updates levels that have not had their source_tag set but have a level with equivalent quantum numbers in the Marvel
+    data. This is determined through merging those states without a source_tag on the shift_table, which contains a list
+    of the unique combinations of quantum numbers in the Marvel data. This assumes the shift table/level matching was
+    performed over a full set of quantum numbers; if matching was done on a partial set, a shift table should be
+    manually created for the set of quantum numbers used to determine a parity pair.
+
+    Args:
+        states:           A DataFrame containing the states to search for parity pairs in.
+        shift_table:      The shift table for the states file, defining the mean energy shift for all states matching a
+            set of quantum numbers.
+        source_tag_col:   The string label for the source tag column in states.
+        unc_col:          The string label for the uncertainty column in states.
+        id_col:           The string label for the ID column in states.
+        energy_final_col: The string label for the final energy column in states.
+        energy_calc_col:  The string label for the calculated energy column in states.
+
+    Returns:
+        The states DataFrame updated with the mean energy shift from the shift table applied to any parity pair
+            counterparts that were not updated with Marvel data.
+    """
+    # energy_dif_mean and energy_dif_unc are implicit column names of the shift table: other columns are the quantum
+    # numbers it was grouped on.
+    energy_dif_mean_col = "energy_dif_mean"
+    energy_dif_unc_col = "energy_dif_unc"
+    shift_table_qn_cols = [
+        qn
+        for qn in shift_table.columns
+        if qn not in (energy_dif_mean_col, energy_dif_unc_col)
+    ]
+
+    # Inner merge here gets us only the states that have matching quantum numbers to an entry in the shift table but has
+    # not had its source_tag set, i.e.: those for which we have Marvel data for another level with the same quantum
+    # numbers, excluding parity.
+    states_missing_parity_pairs = states.loc[states[source_tag_col].isna()].merge(
+        shift_table, on=shift_table_qn_cols, how="inner"
+    )
+
+    # Apply shift table mean energy difference to calculated energy.
+    states_missing_parity_pairs[energy_final_col] = states_missing_parity_pairs.apply(
+        lambda x: x[energy_calc_col] + x[energy_dif_mean_col], axis=1
+    )
+
+    # Left merge parity pair shifts onto states to keep all states and give shift data where needed.
+    states = states.merge(
+        states_missing_parity_pairs[[id_col, energy_final_col, energy_dif_unc_col]],
+        on=[id_col],
+        how="left",
+        suffixes=("", "_temp"),
+    )
+    states.loc[
+        states[id_col].isin(states_missing_parity_pairs[id_col]), source_tag_col
+    ] = "PS_1"
+    # Take the energy_final_temp from the merged DataFrame as energy_final where it exists, and the energy_dif_unc as
+    # the unc for these rows.
+    energy_final_temp_col = energy_final_col + "_temp"
+    # Change to find new merge cols based on "PS_1" source_tag?
+    states[energy_final_col] = np.where(
+        states[energy_final_temp_col].isna(),
+        states[energy_final_col],
+        states[energy_final_temp_col],
+    )
+    states[unc_col] = np.where(
+        states[energy_final_temp_col].isna(),
+        states[unc_col],
+        states[energy_dif_unc_col],
+    )
+    # Drop any temp columns, including the now useless (as it has been copied over into unc) energy_dif_unc column.
+    states = states.drop(
+        list(states.filter(regex="_temp")) + [energy_dif_unc_col], axis=1
+    )
+    # states = states.drop(energy_dif_unc_col, axis=1)
+    # Reorder on id for convenience.
+    states = states.sort_values(by=[id_col], ascending=True)
     return states
