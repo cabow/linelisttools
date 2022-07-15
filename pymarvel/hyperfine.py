@@ -162,8 +162,8 @@ def calc_deperturbation(
     intensity_col: str,
     hf_presence_scale_factor: float,
     hf_skew_scale_factor: float,
-    grouped_data,
-) -> t.List:
+    grouped_data: t.Tuple[t.List[str], pd.DataFrame],
+) -> t.List[t.Union[str, float, int]]:
     df_group = grouped_data[1]
     energy_wm = calc_weighted_mean_energy(
         energy_list=df_group[energy_col], weight_list=df_group[intensity_col]

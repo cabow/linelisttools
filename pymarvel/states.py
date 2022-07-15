@@ -772,13 +772,14 @@ def set_calc_states(
 ) -> pd.DataFrame:
     """
     Updates all states with no assigned source tag to Calculated and estimates their uncertainty with the function
-    :func:`~pymarvel.states.estimate_uncertainty`. Currently, only works for diatomic state files given the v scaling in
+    :func:`pymarvel.states.estimate_uncertainty`. Currently, only works for diatomic state files given the v scaling in
     the uncertainty estimator.
 
     Args:
-        states:           A DataFrame containing all states, those of which without a source_tag set will be updated to calculated.
-        unc_j_factor:     The uncertainty scale factor for the J term passed to :func:`~pymarvel.states.estimate_uncertainty`.
-        unc_v_factor:     The uncertainty scale factor for the v term passed to :func:`~pymarvel.states.estimate_uncertainty`.
+        states:           A DataFrame containing all states, those of which without a source_tag set will be updated to
+            calculated.
+        unc_j_factor:     The uncertainty scale factor for the J term.
+        unc_v_factor:     The uncertainty scale factor for the v term.
         source_tag_col:   The string label for the source tag column in states.
         unc_col:          The string label for the uncertainty column in states.
         j_col:            The string label for the J column in states.
@@ -787,7 +788,8 @@ def set_calc_states(
         energy_calc_col:  The string label for the calculated energy column in states.
 
     Returns:
-        A DataFrame where all input states without a source tag assigned have been set to Calculated and had their uncertainty estimated.
+        A DataFrame where all input states without a source tag assigned have been set to Calculated and had their
+            uncertainty estimated.
     """
     # v_limit_states = states.loc[states[source_tag_col] == source_tag_v_limiter, 'state'].unique()
     # for state in v_limit_states:
