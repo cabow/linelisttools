@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "pymarvel"
+name = "linelisttools"
 version = "0.1.0"
-description = "Python wrapper for Marvel C++ code."
+description = "Various tools for handling and updating line lists. Intended to be used with the ExoMol line list format."
 authors = ["Charles Bowesman"]
 license = "GPL"
 
