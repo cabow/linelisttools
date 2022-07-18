@@ -59,6 +59,26 @@ def match_levels(
     is_isotopologue_match: bool = False,
     overwrite_non_match_qn_cols: bool = False,
 ) -> t.Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+
+    Args:
+        levels_initial:
+        levels_new:
+        qn_match_cols:
+        match_source_tag:
+        shift_table_qn_cols:
+        levels_new_qn_cols:
+        suffixes:
+        energy_col:
+        unc_col:
+        source_tag_col:
+        id_col:
+        is_isotopologue_match:
+        overwrite_non_match_qn_cols:
+
+    Returns:
+
+    """
     if suffixes is None:
         suffixes = ("_calc", "_obs")
 
@@ -243,6 +263,20 @@ def set_pseudo_experimental_unc(
     v_val: float = 0,
     v_max: float = 0,
 ) -> float:
+    """
+
+    Args:
+        std:
+        a:
+        b:
+        j_val:
+        j_max:
+        v_val:
+        v_max:
+
+    Returns:
+
+    """
     j_dif = max(0, int(j_val - j_max)) if j_val != 0 and j_max != 0 else 0
     v_dif = max(0, int(v_val - v_max)) if v_val != 0 and v_max != 0 else 0
     unc_extrapolated = estimate_uncertainty(j_dif, v_dif, a, b)
