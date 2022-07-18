@@ -250,41 +250,70 @@ def match_levels(
     return levels_matched, shift_table
 
 
-def estimate_uncertainty(j_val: float, v_val: float, a: float, b: float) -> float:
-    return a * j_val * (j_val * +1) + b * v_val
+def estimate_uncertainty(
+    j_val: float, v_val: float, j_factor: float, v_factor: float
+) -> float:
+    """
+    Provides an uncertainty estimate for a state based on a quadratic J and linear v term.
+    Currently, only intended for use with diatomics, due to the singular vibrational quantum number input.
+
+    Args:
+        j_val:    The J value of the state.
+        v_val:    The v value of the state.
+        j_factor: The value to scale the quadratic J term by.
+        v_factor: The value to scale the linear v term by.
+
+    Returns:
+        A float representing an uncertainty estimate for a state.
+    """
+    return j_factor * j_val * (j_val * +1) + v_factor * v_val
 
 
-def set_pseudo_experimental_unc(
+def set_predicted_unc(
     std: float,
-    a: float,
-    b: float,
+    j_factor: float,
+    v_factor: float,
     j_val: float = 0,
     j_max: float = 0,
     v_val: float = 0,
     v_max: float = 0,
 ) -> float:
     """
+    Provides an increased uncertainty estimate for a state based on an initial input uncertainty and a calculated
+    increase proportional to the states quantum numbers J and v. This increase is obtained from
+    :func:`linelisttools.states.estimate_uncertainty`.
+
+    In cases where uncertainties are to be determined for higher J states in a series (i.e.: a vibronic band) then J_max
+    should be set as the highest J present in that series, such that the resulting uncertainty estimate is only
+    dependent on how far beyond J_max the user is extrapolating to. Generally, scaling based on v and v_max is for use
+    with providing uncertainty estimates for calculated or pseudo-experimentally corrected states in vibrational bands
+    above the observational data.
+
+    Currently, this method is only intended for use with diatomics, due to the singular vibrational quantum number
+    input.
 
     Args:
-        std:
-        a:
-        b:
-        j_val:
-        j_max:
-        v_val:
-        v_max:
+        std:      The base uncertainty of a state to be increased.
+        j_factor: The value to scale the quadratic J term by.
+        v_factor: The value to scale the linear v term by.
+        j_val:    The J value of the state.
+        j_max:    The maximum value of J that exists in the series that predictions are being made over. If present then
+            the uncertainty estimate J term will only scale off how much greater the current J value is that this.
+        v_val:    The v value of the state.
+        v_max:    The maximum value of v that exists in the series that predictions are being made over. If present then
+            the uncertainty estimate v term will only scale off how much greater the current v value is that this.
 
     Returns:
-
+        A float representing the updated uncertainty of a state with an applied energy prediction.
     """
     j_dif = max(0, int(j_val - j_max)) if j_val != 0 and j_max != 0 else 0
     v_dif = max(0, int(v_val - v_max)) if v_val != 0 and v_max != 0 else 0
-    unc_extrapolated = estimate_uncertainty(j_dif, v_dif, a, b)
+    unc_extrapolated = estimate_uncertainty(j_dif, v_dif, j_factor, v_factor)
     return std + unc_extrapolated
 
 
 def predict_shifts(
-    levels_matched: pd.DataFrame,
+    states_matched: pd.DataFrame,
     shift_table: pd.DataFrame,
     fit_qn_list: t.List[str],
     j_segment_threshold_size: int = 14,
@@ -298,19 +327,28 @@ def predict_shifts(
     """
 
     Args:
-        levels_matched:
-        shift_table:
-        fit_qn_list:
-        j_segment_threshold_size:
-        show_plot:
-        unc_col:
-        j_col:
-        source_tag_col:
-        executor_type:
-        n_workers:
+        states_matched:           The matched Marvel/calculated states from which the obs.-calc. values to fit to are
+            derived.
+        shift_table:              The shift table derived from the matches states, providing mean obs.-calc. shifts for
+            the input states grouped by an arbitrary set of quantum numbers. Generally this grouping should be the same
+            as the quantum numbers provided in fit_qn_list.
+        fit_qn_list:              The list of arbitrary quantum numbers to group the obs.-calc. trends on for fitting.
+            Generally should be the same as those used to generate the shift table. All quantum numbers must exist as
+             columns within the shift_table and levels_matched DataFrames.
+        j_segment_threshold_size: The minimum number of J datapoints that must be present in a given segment to fit to.
+            The segments that obs.-calc. predictions are fit to will increase in size if multiple sets of missing data
+            exist within an array of sequential J values of length equal to this argument.
+        show_plot:                Determines whether plots of the input and fitted data are shown.
+        unc_col:                  The string column name for the uncertainty column in states_matched.
+        j_col:                    The string column name for the J column in states_matched.
+        source_tag_col:           The string column name for the source tag column in states_matched.
+        executor_type:            Determines whether the fitting will be carried out with multiple threads or processes.
+            Defaults to multithreading.
+        n_workers:                The number of threads/processes to concurrently execute for the fitting.
 
     Returns:
-
+        Outputs the states_matched DataFrame with updated interpolated and extrapolated energy shifts in the series
+        defined by fit_qn_list for which Marvel data exists.
     """
     # if fit_qn_list is not None:
     #     shift_table["fit_qn"] = shift_table.apply(
@@ -352,28 +390,28 @@ def predict_shifts(
     # del pe_fit_shifts["fit_qn"]
 
     qn_merge_cols = fit_qn_list + [j_col]
-    levels_matched = levels_matched.merge(
+    states_matched = states_matched.merge(
         pe_fit_shifts, left_on=qn_merge_cols, right_on=qn_merge_cols, how="left"
     )
-    levels_matched.loc[
-        (levels_matched["energy_final"].isna())
-        & (~levels_matched["pe_fit_energy_shift"].isna())
-        & (~levels_matched["energy_calc"].isna()),
+    states_matched.loc[
+        (states_matched["energy_final"].isna())
+        & (~states_matched["pe_fit_energy_shift"].isna())
+        & (~states_matched["energy_calc"].isna()),
         source_tag_col,
     ] = "PS_2"
-    levels_matched[unc_col] = np.where(
-        levels_matched[source_tag_col] == "PS_2",
-        levels_matched["pe_fit_unc"],
-        levels_matched[unc_col],
+    states_matched[unc_col] = np.where(
+        states_matched[source_tag_col] == "PS_2",
+        states_matched["pe_fit_unc"],
+        states_matched[unc_col],
     )
-    levels_matched["energy_final"] = np.where(
-        levels_matched[source_tag_col] == "PS_2",
-        levels_matched["energy_calc"] + levels_matched["pe_fit_energy_shift"],
-        levels_matched["energy_final"],
+    states_matched["energy_final"] = np.where(
+        states_matched[source_tag_col] == "PS_2",
+        states_matched["energy_calc"] + states_matched["pe_fit_energy_shift"],
+        states_matched["energy_final"],
     )
-    del levels_matched["pe_fit_energy_shift"]
-    del levels_matched["pe_fit_unc"]
-    print("PS_2: \n", levels_matched.loc[levels_matched[source_tag_col] == "PS_2"])
+    del states_matched["pe_fit_energy_shift"]
+    del states_matched["pe_fit_unc"]
+    print("PS_2: \n", states_matched.loc[states_matched[source_tag_col] == "PS_2"])
 
     # Update energies with higher-J shift extrapolations:
     j_max_col = j_col + "_max"
@@ -389,27 +427,27 @@ def predict_shifts(
     # pe_extrapolate_shifts[fit_qn_list] = pe_extrapolate_shifts["fit_qn"].str.split("|", len(fit_qn_list), expand=True)
     # del pe_extrapolate_shifts["fit_qn"]
 
-    levels_matched = levels_matched.merge(
+    states_matched = states_matched.merge(
         pe_extrapolate_shifts, left_on=fit_qn_list, right_on=fit_qn_list, how="left"
     )
-    levels_matched.loc[
-        (levels_matched["energy_final"].isna())
-        & (~levels_matched[j_max_col].isna())
-        & (~levels_matched["energy_calc"].isna())
-        & (levels_matched[j_col] > levels_matched[j_max_col]),
+    states_matched.loc[
+        (states_matched["energy_final"].isna())
+        & (~states_matched[j_max_col].isna())
+        & (~states_matched["energy_calc"].isna())
+        & (states_matched[j_col] > states_matched[j_max_col]),
         source_tag_col,
     ] = "PS_3"
     # Scale unc based on j over j_max.
-    # levels_matched['unc'] = levels_matched.apply(
+    # states_matched['unc'] = states_matched.apply(
     #     lambda x: scale_uncertainty(std=x['pe_extrapolate_energy_shift_std'], std_scale=2, j_val=x['j'],
     #                                 j_max=x['j_max'], j_scale=0.05)
     #     if math.isnan(x['energy_final']) and not math.isnan(x['energy_calc']) and not math.isnan(x['j_max'])
     #        and x['j'] > x['j_max'] else x['unc'], axis=1)
-    levels_matched[unc_col] = levels_matched.apply(
-        lambda x: set_pseudo_experimental_unc(
+    states_matched[unc_col] = states_matched.apply(
+        lambda x: set_predicted_unc(
             std=x["pe_extrapolate_energy_shift_std"],
-            a=0.0001,
-            b=0.05,
+            j_factor=0.0001,
+            v_factor=0.05,
             j_val=x[j_col],
             j_max=x[j_max_col],
         )
@@ -417,15 +455,15 @@ def predict_shifts(
         else x[unc_col],
         axis=1,
     )
-    levels_matched["energy_final"] = np.where(
-        levels_matched[source_tag_col] == "PS_3",
-        levels_matched["energy_calc"] + levels_matched["pe_extrapolate_energy_shift"],
-        levels_matched["energy_final"],
+    states_matched["energy_final"] = np.where(
+        states_matched[source_tag_col] == "PS_3",
+        states_matched["energy_calc"] + states_matched["pe_extrapolate_energy_shift"],
+        states_matched["energy_final"],
     )
-    del levels_matched[j_max_col]
-    del levels_matched["pe_extrapolate_energy_shift"]
-    del levels_matched["pe_extrapolate_energy_shift_std"]
-    print("PS_3: \n", levels_matched.loc[levels_matched[source_tag_col] == "PS_3"])
+    del states_matched[j_max_col]
+    del states_matched["pe_extrapolate_energy_shift"]
+    del states_matched["pe_extrapolate_energy_shift_std"]
+    print("PS_3: \n", states_matched.loc[states_matched[source_tag_col] == "PS_3"])
 
     # UNNECESSARY IF NOT OUTPUTTING THESE DATAFRAMES.
     # Add shift predictions to shift table.
@@ -454,7 +492,7 @@ def predict_shifts(
     #         "pe_extrapolate_energy_shift_std": "extrapolation_energy_unc",
     #     }
     # )
-    return levels_matched
+    return states_matched
 
 
 def fit_predictions(
@@ -826,8 +864,8 @@ def set_calc_states(
 ) -> pd.DataFrame:
     """
     Updates all states with no assigned source tag to Calculated and estimates their uncertainty with the function
-    :func:`linelisttools.states.estimate_uncertainty`. Currently, only works for diatomic state files given the v scaling in
-    the uncertainty estimator.
+    :func:`linelisttools.states.estimate_uncertainty`. Currently, only works for diatomic state files given the v
+    scaling in the uncertainty estimator.
 
     Args:
         states:           A DataFrame containing all states, those of which without a source_tag set will be updated to
