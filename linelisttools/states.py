@@ -261,6 +261,23 @@ def predict_shifts(
     executor_type: ExecutorType = ExecutorType.THREADS,
     n_workers: int = 8,
 ) -> pd.DataFrame:
+    """
+
+    Args:
+        levels_matched:
+        shift_table:
+        fit_qn_list:
+        j_segment_threshold_size:
+        show_plot:
+        unc_col:
+        j_col:
+        source_tag_col:
+        executor_type:
+        n_workers:
+
+    Returns:
+
+    """
     # if fit_qn_list is not None:
     #     shift_table["fit_qn"] = shift_table.apply(
     #         lambda x: "|".join(str(x[qn]) for qn in fit_qn_list), axis=1
