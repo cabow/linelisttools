@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pymarvel.concurrence import ExecutorType
-from pymarvel.format import SourceTag
-from pymarvel.states import (
+from linelisttools.concurrence import ExecutorType
+from linelisttools.states import (
+    SourceTag,
     match_levels,
     predict_shifts,
     read_mvl_energies,
@@ -29,7 +29,8 @@ def alo_states_file():
 
 @pytest.mark.parametrize(
     "marvel_qn_cols, qn_match_cols, match_source_tag, shift_table_qn_cols, levels_new_qn_cols, suffixes, "
-    "energy_col, unc_col, j_col, source_tag_col, id_col, is_isotopologue_match, overwrite_non_match_qn_cols",
+    "energy_col, unc_col, j_col, parity_col, v_col, source_tag_col, id_col, is_isotopologue_match, "
+    "overwrite_non_match_qn_cols, j_segment_threshold_size",
     [
         (
             ["state", "v", "J", "N", "fs", "parity"],
@@ -41,10 +42,13 @@ def alo_states_file():
             "energy",
             "unc",
             "J",
+            "parity",
+            "v",
             "source_tag",
             "ID",
             False,
             False,
+            14,
         )
     ],
 )
@@ -60,10 +64,13 @@ def test_alo_states(
     energy_col,
     unc_col,
     j_col,
+    parity_col,
+    v_col,
     source_tag_col,
+    id_col,
     is_isotopologue_match,
     overwrite_non_match_qn_cols,
-    id_col,
+    j_segment_threshold_size,
 ):
     pd.set_option("display.max_columns", None)
     levels_new = read_mvl_energies(alo_marvel_energies_file, marvel_qn_cols)
@@ -104,10 +111,10 @@ def test_alo_states(
             "degeneracy",
             j_col,
             "lifetime",
-            "parity",
+            parity_col,
             "parity_norot",
             "state",
-            "v",
+            v_col,
             "Lambda",
             "Sigma",
             "Omega",
@@ -134,8 +141,8 @@ def test_alo_states(
         levels_matched=matched_states,
         shift_table=shift_table,
         fit_qn_list=shift_table_qn_cols,
-        j_segment_threshold_size=14,
-        show_plot=False,
+        j_segment_threshold_size=j_segment_threshold_size,
+        show_plot=True,
         unc_col=unc_col,
         j_col=j_col,
         source_tag_col=source_tag_col,
@@ -161,10 +168,12 @@ def test_alo_states(
         source_tag_col=source_tag_col,
         unc_col=unc_col,
         j_col=j_col,
-        v_col="v",
+        v_col=v_col,
         energy_final_col=energy_final_col,
         energy_calc_col=energy_calc_col,
     )
-    matched_states = matched_states.sort_values(by=[j_col, "parity", energy_final_col])
+    matched_states = matched_states.sort_values(
+        by=[j_col, parity_col, energy_final_col]
+    )
     matched_states[id_col] = np.arange(1, len(matched_states) + 1)
     print(matched_states)

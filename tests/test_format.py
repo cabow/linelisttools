@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pymarvel.format import fortran_format, output_data
+from linelisttools.format import fortran_format, output_data
 
 
 @pytest.fixture(scope="session")

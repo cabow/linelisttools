@@ -1,11 +1,9 @@
-import os
 from io import StringIO
-from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from pymarvel.hyperfine import (
+from linelisttools.hyperfine import (
     calc_hf_skew,
     calc_num_possible_hf_trans,
     calc_possible_hf_trans,

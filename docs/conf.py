@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath("../"))
 
 # -- Project information -----------------------------------------------------
 
-project = "pymarvel"
+project = "linelisttools"
 copyright = "2022, Charles Bowesman"
 author = "Charles Bowesman"
 
