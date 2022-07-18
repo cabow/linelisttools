@@ -430,6 +430,18 @@ def fit_predictions(
     show_plot: bool,
     grouped_data: t.Tuple[t.List[str], pd.DataFrame],
 ) -> t.Tuple[t.List[tuple], t.List[tuple]]:
+    """
+
+    Args:
+        colour:
+        j_segment_threshold_size:
+        j_col:
+        show_plot:
+        grouped_data:
+
+    Returns:
+
+    """
     # TODO: Clean up internal plotting - does not work well with multithreading.
     shift_predictions = []
     extrapolate_j_shifts = []
