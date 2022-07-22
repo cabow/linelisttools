@@ -49,7 +49,7 @@ def temp_plot_output():
                 "3_2Delta": "$\\sigma\\delta\\sigma^*$",
             },
             ["state", "Omega"],
-            {
+            [
                 "$\\sigma^2\\sigma^*$",
                 "$\\sigma^2\\pi$",
                 "$\\sigma^2\\delta$",
@@ -59,7 +59,7 @@ def temp_plot_output():
                 "$\\delta^2\\sigma^*$",
                 "$\\delta^2\\pi$",
                 "$\\delta^3$",
-            },
+            ],
             "energy",
         )
     ],
@@ -73,20 +73,19 @@ def test_plot_state_coverage(
     electron_configurations,
     energy_col,
 ):
-    colours = [
-        "#EE7733",
-        "#0077BB",
-        "#EE3377",
-        "#33BBEE",
-        "#CC3311",
-        "#009988",
-        "#BBBBBB",
-    ]
+    # colours = [
+    #     "#EE7733",
+    #     "#0077BB",
+    #     "#EE3377",
+    #     "#33BBEE",
+    #     "#CC3311",
+    #     "#009988",
+    #     "#BBBBBB",
+    # ]
     diatomic_energies = read_mvl_energies(file=diatomic_energy_file, qn_cols=qn_cols)
     plot_state_coverage(
         energies=diatomic_energies,
         state_configuration_dict=state_configuration_dict,
-        colours=colours,
         show=False,
         out_file=temp_plot_output,
         plot_type=PlotType.VIOLIN,

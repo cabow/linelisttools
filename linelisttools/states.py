@@ -326,6 +326,7 @@ def predict_shifts(
 ) -> pd.DataFrame:
     """
 
+
     Args:
         states_matched:           The matched Marvel/calculated states from which the obs.-calc. values to fit to are
             derived.
@@ -335,7 +336,7 @@ def predict_shifts(
         fit_qn_list:              The list of arbitrary quantum numbers to group the obs.-calc. trends on for fitting.
             Generally should be the same as those used to generate the shift table. All quantum numbers must exist as
              columns within the shift_table and levels_matched DataFrames.
-        j_segment_threshold_size: The minimum number of J datapoints that must be present in a given segment to fit to.
+        j_segment_threshold_size: The minimum number of J data-points that must be present in a given segment to fit to.
             The segments that obs.-calc. predictions are fit to will increase in size if multiple sets of missing data
             exist within an array of sequential J values of length equal to this argument.
         show_plot:                Determines whether plots of the input and fitted data are shown.

@@ -1,6 +1,6 @@
 import re
 import typing as t
-from enum import Enum
+from enum import IntEnum
 from itertools import cycle, islice
 
 import matplotlib.pyplot as plt
@@ -12,9 +12,93 @@ from linelisttools.states import SourceTag
 # TODO: Create colourblind friendly colour utility.
 
 
-class PlotType(Enum):
-    VIOLIN = "Ca"
-    EVENT = "Ma"
+class PlotType(IntEnum):
+    VIOLIN = 0
+    EVENT = 1
+
+
+def get_qualitative_colors(n_colours: int) -> t.List[str]:
+    qualitative_color_dict = {
+        1: ["#4477aa"],
+        2: ["#4477aa", "#cc6677"],
+        3: ["#4477aa", "#ddcc77", "#cc6677"],
+        4: ["#4477aa", "#117733", "#ddcc77", "#cc6677"],
+        5: ["#332288", "#88ccee", "#117733", "#ddcc77", "#cc6677"],
+        6: ["#332288", "#88ccee", "#117733", "#ddcc77", "#cc6677", "#aa4499"],
+        7: [
+            "#332288",
+            "#88ccee",
+            "#44aa99",
+            "#117733",
+            "#ddcc77",
+            "#cc6677",
+            "#aa4499",
+        ],
+        8: [
+            "#332288",
+            "#88ccee",
+            "#44aa99",
+            "#117733",
+            "#999933",
+            "#ddcc77",
+            "#cc6677",
+            "#aa4499",
+        ],
+        9: [
+            "#332288",
+            "#88ccee",
+            "#44aa99",
+            "#117733",
+            "#999933",
+            "#ddcc77",
+            "#cc6677",
+            "#882255",
+            "#aa4499",
+        ],
+        10: [
+            "#332288",
+            "#88ccee",
+            "#44aa99",
+            "#117733",
+            "#999933",
+            "#ddcc77",
+            "#661100",
+            "#cc6677",
+            "#882255",
+            "#aa4499",
+        ],
+        11: [
+            "#332288",
+            "#6699cc",
+            "#88ccee",
+            "#44aa99",
+            "#117733",
+            "#999933",
+            "#ddcc77",
+            "#661100",
+            "#cc6677",
+            "#882255",
+            "#aa4499",
+        ],
+        12: [
+            "#332288",
+            "#6699cc",
+            "#88ccee",
+            "#44aa99",
+            "#117733",
+            "#999933",
+            "#ddcc77",
+            "#661100",
+            "#cc6677",
+            "#aa4466",
+            "#882255",
+            "#aa4499",
+        ],
+    }
+    if n_colours > 12:
+        return list(islice(cycle(qualitative_color_dict.get(12)), n_colours))
+    else:
+        return qualitative_color_dict.get(n_colours)
 
 
 def get_state_tex(states: t.List[str]) -> t.Dict:
@@ -41,11 +125,10 @@ def get_state_tex(states: t.List[str]) -> t.Dict:
 def plot_state_coverage(
     energies: pd.DataFrame,
     state_configuration_dict: t.Dict,
-    colours: t.List[str],
     show: bool = True,
     out_file: str = None,
     plot_type: PlotType = PlotType.EVENT,
-    electron_configurations: t.Set[str] = None,
+    electron_configurations: t.List[str] = None,
     energy_col: str = "energy",
 ):
     # TODO: Test inbuilt sizes/shifts (i.e.: labelpad) or different scale plots. Allow for plotting without electronic
@@ -64,7 +147,7 @@ def plot_state_coverage(
         plot_electron_configs = list(set(state_configuration_dict.values()))
         plot_config_list = list(
             sorted(
-                electron_configurations.intersection(plot_electron_configs),
+                set(electron_configurations).intersection(plot_electron_configs),
                 key=lambda x: electron_configurations.index(x),
             )
         )
@@ -76,26 +159,22 @@ def plot_state_coverage(
         for state, config in state_configuration_dict.items()
         if config == plot_config and not state.endswith("_P")
     ]
-    # print("Energy ordered states by electron config order", plot_config_states)
 
     plot_config_ticks = [
         state_configuration_dict.get(state) for state in plot_config_states
     ]
-    # print(plot_config_ticks)
     plot_config_tick_min_dict = {
         plot_config: min(
             idx for idx, val in enumerate(plot_config_ticks) if val == plot_config
         )
         for plot_config in plot_config_list
     }
-    # print(plot_config_tick_min_dict)
     plot_config_tick_max_dict = {
         plot_config: max(
             idx for idx, val in enumerate(plot_config_ticks) if val == plot_config
         )
         for plot_config in plot_config_list
     }
-    # print(plot_config_tick_max_dict)
     plot_config_tick_mid_dict = {
         plot_config: np.mean(
             [
@@ -105,9 +184,9 @@ def plot_state_coverage(
         )
         for plot_config in plot_config_list
     }
-    # print(plot_config_tick_mid_dict)
 
-    plot_colours = list(islice(cycle(colours), len(plot_config_states)))
+    # TODO: Include tol vibrant, etc for nicer looking stuff, retain this for generic colorblind friendly use case?
+    plot_colour_list = get_qualitative_colors(len(plot_config_states))
 
     config_state_energies = [
         energies.loc[energies["state"] == state, energy_col]
@@ -125,7 +204,7 @@ def plot_state_coverage(
             config_state_energies,
             linelengths=0.95,
             linewidths=config_state_widths,
-            colors=plot_colours,
+            colors=plot_colour_list,
             orientation="vertical",
         )
     elif plot_type is PlotType.VIOLIN:
@@ -137,7 +216,7 @@ def plot_state_coverage(
             showextrema=False,
         )
         for part_idx, part in enumerate(violin_parts["bodies"]):
-            part.set_facecolor(plot_colours[part_idx])
+            part.set_facecolor(plot_colour_list[part_idx])
 
     state_tex_dict = get_state_tex(states=plot_config_states)
 
@@ -220,15 +299,16 @@ def plot_states_by_source_tag(
         SourceTag.EXTRAPOLATED_SHIFT.value: "Predicted shift (extrapolation)",
         SourceTag.PSEUDO_EXPERIMENTAL.value: "Pseudo-experimental correction",
     }
-    plot_colour_list = [
-        "#EE7733",
-        "#0077BB",
-        "#EE3377",
-        "#33BBEE",
-        "#CC3311",
-        "#009988",
-        "#BBBBBB",
-    ]
+    # plot_colour_list = [
+    #     "#EE7733",
+    #     "#0077BB",
+    #     "#EE3377",
+    #     "#33BBEE",
+    #     "#CC3311",
+    #     "#009988",
+    #     "#BBBBBB",
+    # ]
+    plot_colour_list = get_qualitative_colors(len(plot_source_list))
 
     fig, axs = plt.subplots(len(plot_state_list), 1, figsize=(10, 20))
     for state_idx, state in enumerate(plot_state_list):
