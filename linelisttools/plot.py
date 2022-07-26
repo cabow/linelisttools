@@ -9,15 +9,35 @@ import pandas as pd
 
 from linelisttools.states import SourceTag
 
-# TODO: Create colourblind friendly colour utility.
-
 
 class PlotType(IntEnum):
     VIOLIN = 0
     EVENT = 1
 
 
-def get_qualitative_colors(n_colours: int) -> t.List[str]:
+def get_vibrant_colors(n_colors: int) -> t.List[str]:
+    vibrant_color_list = [
+        "#0077BB",
+        "#33BBEE",
+        "#009988",
+        "#44EE66",
+        "#FFCC11",
+        "#EE7733",
+        "#CC3311",
+        "#EE3377",
+        "#BB33BB",
+        "#8833EE",
+    ]
+    if n_colors > len(vibrant_color_list):
+        return list(islice(cycle(vibrant_color_list), n_colors))
+    else:
+        colors_list_idx = np.linspace(
+            0, len(vibrant_color_list) - 1, n_colors, dtype=int
+        ).tolist()
+        return list([vibrant_color_list[idx] for idx in colors_list_idx])
+
+
+def get_qualitative_colors(n_colors: int) -> t.List[str]:
     qualitative_color_dict = {
         1: ["#4477aa"],
         2: ["#4477aa", "#cc6677"],
@@ -95,14 +115,23 @@ def get_qualitative_colors(n_colours: int) -> t.List[str]:
             "#aa4499",
         ],
     }
-    if n_colours > 12:
-        return list(islice(cycle(qualitative_color_dict.get(12)), n_colours))
+    if n_colors > 12:
+        return list(islice(cycle(qualitative_color_dict.get(12)), n_colors))
     else:
-        return qualitative_color_dict.get(n_colours)
+        return qualitative_color_dict.get(n_colors)
 
 
 def get_state_tex(states: t.List[str]) -> t.Dict:
     """
+    Maps the input list of string state labels to a TeX markup version, assuming the state label consist of (in order):
+        - A single letter (upper- or lower-case) or number.
+        - Any sequential apostrophes immediately after.
+        - Potentially a single underscore to separate the state label or symbol.
+        - A single digit (denoting the spin multiplicity).
+        - At least one word character representing the type of state (i.e.: "Sigma").
+        - A potential single instance of a minus or plus character.
+
+    Do we need support for garade/ungarade notation?
 
     Args:
         states: List of raw state labels to be converted to tex.
@@ -111,7 +140,7 @@ def get_state_tex(states: t.List[str]) -> t.Dict:
     """
     states = set(states)
     state_tex_dict = {}
-    state_regex = re.compile(r"(\w)(['`]?)_?(\d)(\w*)([-\+]?)")
+    state_regex = re.compile(r"([^\W_])(['`]*?)_?(\d)(\w+)([-\+]?)")
     for state in states:
         state_match = state_regex.match(state)
         prime = "\\prime" if state_match.group(2) != "" else ""
@@ -124,106 +153,157 @@ def get_state_tex(states: t.List[str]) -> t.Dict:
 
 def plot_state_coverage(
     energies: pd.DataFrame,
-    state_configuration_dict: t.Dict,
+    state_list: t.List[str] = None,
+    state_configuration_dict: t.Dict = None,
     show: bool = True,
     out_file: str = None,
     plot_type: PlotType = PlotType.EVENT,
     electron_configurations: t.List[str] = None,
     energy_col: str = "energy",
-):
+) -> None:
+    """
+    Plots the level coverage of the input marvel energies by electronic state as a function of their energies. Orders
+    the states by electron configuration when present.
+
+    A valid out_file path must be provided or show set to true.
+
+    Args:
+        energies:                 A DataFrame containing the Marvel energies for a molecule.
+        state_list:               A list of the states in the energies DataFrame to plot.
+        state_configuration_dict: A dictionary mapping each state to be plotted to its electron configuration.
+        show:                     A boolean to determine whether the generated figure is shown.
+        out_file:                 The filepath to save the figure to.
+        plot_type:                An enum to determine whether the state coverage is plotted as an event or violin plot.
+        electron_configurations:  A list of the possible electron configurations to plot.
+        energy_col:               The string column name for the energy column in the energies DataFrame.
+    """
+    # TODO: Allow plotting without electron configuration? Instead plot sequential states?
     # TODO: Test inbuilt sizes/shifts (i.e.: labelpad) or different scale plots. Allow for plotting without electronic
     #  configuration.
+    if state_list is None and state_configuration_dict is None:
+        raise RuntimeError(
+            "No values passed for state_list or state_configuration_dict. Either specify which states to plot by "
+            "passing a string list to state_list or a dictionary mapping them to their electron configuration to "
+            "state_configuration_dict."
+        )
+
     if out_file is None and not show:
         raise RuntimeError(
             "No out_file specified and show set to False - nothing to do."
         )
+
     if plot_type not in (PlotType.EVENT, PlotType.VIOLIN):
         raise RuntimeError(
             f"State coverage plot only accepts PlotTypes of {PlotType.EVENT} (default) or {PlotType.VIOLIN}."
         )
-    if electron_configurations is None:
-        plot_config_list = list(set(state_configuration_dict.values()))
-    else:
-        plot_electron_configs = list(set(state_configuration_dict.values()))
-        plot_config_list = list(
-            sorted(
-                set(electron_configurations).intersection(plot_electron_configs),
-                key=lambda x: electron_configurations.index(x),
-            )
-        )
-    # print("Electron config order: ", plot_config_list)
-
-    plot_config_states = [
-        state
-        for plot_config in plot_config_list
-        for state, config in state_configuration_dict.items()
-        if config == plot_config and not state.endswith("_P")
-    ]
-
-    plot_config_ticks = [
-        state_configuration_dict.get(state) for state in plot_config_states
-    ]
-    plot_config_tick_min_dict = {
-        plot_config: min(
-            idx for idx, val in enumerate(plot_config_ticks) if val == plot_config
-        )
-        for plot_config in plot_config_list
-    }
-    plot_config_tick_max_dict = {
-        plot_config: max(
-            idx for idx, val in enumerate(plot_config_ticks) if val == plot_config
-        )
-        for plot_config in plot_config_list
-    }
-    plot_config_tick_mid_dict = {
-        plot_config: np.mean(
-            [
-                plot_config_tick_min_dict.get(plot_config),
-                plot_config_tick_max_dict.get(plot_config),
-            ]
-        )
-        for plot_config in plot_config_list
-    }
-
-    # TODO: Include tol vibrant, etc for nicer looking stuff, retain this for generic colorblind friendly use case?
-    plot_colour_list = get_qualitative_colors(len(plot_config_states))
-
-    config_state_energies = [
-        energies.loc[energies["state"] == state, energy_col]
-        for state in plot_config_states
-    ]
 
     plt.figure(num=None, dpi=800, figsize=(8, 7))
+    label_font_size = 10
+
+    if state_list is None:
+        if electron_configurations is None:
+            plot_config_list = list(set(state_configuration_dict.values()))
+        else:
+            plot_electron_configs = list(set(state_configuration_dict.values()))
+            plot_config_list = list(
+                sorted(
+                    set(electron_configurations).intersection(plot_electron_configs),
+                    key=lambda x: electron_configurations.index(x),
+                )
+            )
+
+        state_list = [
+            state
+            for plot_config in plot_config_list
+            for state, config in state_configuration_dict.items()
+            if config == plot_config and not state.endswith("_P")
+        ]
+
+        plot_config_ticks = [
+            state_configuration_dict.get(state) for state in state_list
+        ]
+        plot_config_tick_min_dict = {
+            plot_config: min(
+                idx for idx, val in enumerate(plot_config_ticks) if val == plot_config
+            )
+            for plot_config in plot_config_list
+        }
+        plot_config_tick_max_dict = {
+            plot_config: max(
+                idx for idx, val in enumerate(plot_config_ticks) if val == plot_config
+            )
+            for plot_config in plot_config_list
+        }
+        plot_config_tick_mid_dict = {
+            plot_config: np.mean(
+                [
+                    plot_config_tick_min_dict.get(plot_config),
+                    plot_config_tick_max_dict.get(plot_config),
+                ]
+            )
+            for plot_config in plot_config_list
+        }
+
+        for plot_config in plot_config_list:
+            plt.text(
+                plot_config_tick_mid_dict.get(plot_config),
+                -3000,
+                plot_config,
+                horizontalalignment="center",
+                fontsize=label_font_size,
+            )
+
+        plt.tick_params(
+            axis="x", which="both", bottom=True, top=True, labelbottom=False
+        )
+        plt.xticks(
+            [
+                plot_config_tick_max_dict.get(plot_config) + 0.5
+                for plot_config in plot_config_list
+            ][:-1]
+        )
+    else:
+        plt.tick_params(
+            axis="x", which="both", bottom=False, top=False, labelbottom=False
+        )
+
+    # TODO: Allow for switch between vibrant and generic qualitative progression?
+    # plot_colour_list = get_qualitative_colors(len(plot_config_states))
+    plot_colour_list = get_vibrant_colors(len(state_list))
+
+    state_energies = [
+        energies.loc[energies["state"] == state, energy_col] for state in state_list
+    ]
 
     if plot_type is PlotType.EVENT:
         config_state_widths = [
-            0.02 if len(energies) > 1000 else 0.05 for energies in config_state_energies
+            0.02 if len(energies) > 1000 else 0.05 for energies in state_energies
         ]
 
         plt.eventplot(
-            config_state_energies,
+            state_energies,
             linelengths=0.95,
             linewidths=config_state_widths,
             colors=plot_colour_list,
             orientation="vertical",
         )
     elif plot_type is PlotType.VIOLIN:
-        violin_parts = plt.violinplot(
-            config_state_energies,
-            positions=range(0, len(config_state_energies)),
+        violin_plot = plt.violinplot(
+            state_energies,
+            positions=range(0, len(state_energies)),
             showmeans=False,
             showmedians=False,
             showextrema=False,
         )
-        for part_idx, part in enumerate(violin_parts["bodies"]):
-            part.set_facecolor(plot_colour_list[part_idx])
+        for body_idx, body in enumerate(violin_plot["bodies"]):
+            body.set_facecolor(plot_colour_list[body_idx])
+            body.set_alpha(1.0)
 
-    state_tex_dict = get_state_tex(states=plot_config_states)
+    state_tex_dict = get_state_tex(states=state_list)
 
-    label_font_size = 10
     _, y_max = plt.gca().get_ylim()
     text_offset = y_max / 30
-    for state_idx, state in enumerate(plot_config_states):
+    for state_idx, state in enumerate(state_list):
         text_height = (
             energies.loc[energies["state"] == state, energy_col]
             .sort_values(ascending=True)
@@ -238,24 +318,11 @@ def plot_state_coverage(
             fontsize=label_font_size,
         )
 
-    for plot_config in plot_config_list:
-        plt.text(
-            plot_config_tick_mid_dict.get(plot_config),
-            -3000,
-            plot_config,
-            horizontalalignment="center",
-            fontsize=label_font_size,
-        )
-
-    plt.tick_params(axis="x", which="both", bottom=True, top=True, labelbottom=False)
-    plt.xticks(
-        [
-            plot_config_tick_max_dict.get(plot_config) + 0.5
-            for plot_config in plot_config_list
-        ][:-1]
+    plt.xlim(left=-0.6, right=len(state_list) - 0.4)
+    plt.xlabel(
+        "Electronic Configuration",
+        labelpad=6 if state_configuration_dict is None else 25,
     )
-    plt.xlim(left=-0.6, right=len(plot_config_states) - 0.4)
-    plt.xlabel("Electronic Configuration", labelpad=25)
 
     plt.tick_params(axis="y", which="both", labelsize=6)
     plt.ylabel("Energy (cm$^{-1}$)")
@@ -299,16 +366,16 @@ def plot_states_by_source_tag(
         SourceTag.EXTRAPOLATED_SHIFT.value: "Predicted shift (extrapolation)",
         SourceTag.PSEUDO_EXPERIMENTAL.value: "Pseudo-experimental correction",
     }
-    # plot_colour_list = [
-    #     "#EE7733",
-    #     "#0077BB",
-    #     "#EE3377",
-    #     "#33BBEE",
-    #     "#CC3311",
-    #     "#009988",
-    #     "#BBBBBB",
-    # ]
-    plot_colour_list = get_qualitative_colors(len(plot_source_list))
+    source_tag_color_dict = {
+        SourceTag.CALCULATED.value: "#EE7733",
+        SourceTag.MARVELISED.value: "#EE3377",
+        SourceTag.EFFECTIVE_HAMILTONIAN.value: "#009988",
+        SourceTag.PARITY_PAIR.value: "#33BBEE",
+        SourceTag.PREDICTED_SHIFT.value: "#FFCC11",  # EECC33 is maybe more in keeping with saturation/brightness.
+        SourceTag.EXTRAPOLATED_SHIFT.value: "#0077BB",
+        SourceTag.PSEUDO_EXPERIMENTAL.value: "#CC3311",
+    }
+    # plot_colour_list = get_qualitative_colors(len(plot_source_list))
 
     fig, axs = plt.subplots(len(plot_state_list), 1, figsize=(10, 20))
     for state_idx, state in enumerate(plot_state_list):
@@ -332,7 +399,8 @@ def plot_states_by_source_tag(
                 marker="x",
                 s=marker_size,
                 linewidth=marker_line_width,
-                facecolors=plot_colour_list[source_idx],
+                # facecolors=plot_colour_list[source_idx],
+                facecolors=source_tag_color_dict.get(source),
                 label=f"{source} e",
             )
             state_f = state_ax.scatter(
@@ -345,7 +413,8 @@ def plot_states_by_source_tag(
                 marker="+",
                 s=marker_size,
                 linewidth=marker_line_width,
-                facecolors=plot_colour_list[source_idx],
+                # facecolors=plot_colour_list[source_idx],
+                facecolors=source_tag_color_dict.get(source),
                 label=f"{source} f",
             )
 

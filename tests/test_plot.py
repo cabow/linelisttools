@@ -73,23 +73,15 @@ def test_plot_state_coverage(
     electron_configurations,
     energy_col,
 ):
-    # colours = [
-    #     "#EE7733",
-    #     "#0077BB",
-    #     "#EE3377",
-    #     "#33BBEE",
-    #     "#CC3311",
-    #     "#009988",
-    #     "#BBBBBB",
-    # ]
     diatomic_energies = read_mvl_energies(file=diatomic_energy_file, qn_cols=qn_cols)
     plot_state_coverage(
         energies=diatomic_energies,
-        state_configuration_dict=state_configuration_dict,
+        state_list=["X_4Sigma-", "1_2Phi", "1_2Sigma+"],
+        # state_configuration_dict=state_configuration_dict,
         show=False,
         out_file=temp_plot_output,
         plot_type=PlotType.VIOLIN,
-        electron_configurations=electron_configurations,
+        # electron_configurations=electron_configurations,
         energy_col=energy_col,
     )
 
