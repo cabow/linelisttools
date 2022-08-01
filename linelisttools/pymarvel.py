@@ -58,6 +58,6 @@ def load_energies(source_folder: Path, qn_list: list[str]) -> pd.DataFrame:
     mvl_energies_cols = qn_list + ["energy", "unc", "stddev", "degree"]
     return pd.read_csv(
         (source_folder / "EnergyLevels.txt").resolve(),
-        sep=r"\s+",
+        delim_whitespace=True,
         names=mvl_energies_cols,
     )

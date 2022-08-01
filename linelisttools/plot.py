@@ -163,7 +163,8 @@ def plot_state_coverage(
 ) -> None:
     """
     Plots the level coverage of the input marvel energies by electronic state as a function of their energies. Orders
-    the states by electron configuration when present.
+    the states by electron configuration when a mapping is provided, otherwise the order in which they were provided is
+    used.
 
     A valid out_file path must be provided or show set to true.
 
@@ -177,7 +178,7 @@ def plot_state_coverage(
         electron_configurations:  A list of the possible electron configurations to plot.
         energy_col:               The string column name for the energy column in the energies DataFrame.
     """
-    # TODO: Allow plotting without electron configuration? Instead plot sequential states?
+    # TODO: Clarify that electron_configurations is intended to provie the left-to-right plotting order for configs.
     # TODO: Test inbuilt sizes/shifts (i.e.: labelpad) or different scale plots. Allow for plotting without electronic
     #  configuration.
     if state_list is None and state_configuration_dict is None:
@@ -343,7 +344,7 @@ def plot_states_by_source_tag(
     source_tag_col: str = "source_tag",
     plot_state_list: t.List[str] = None,
     plot_source_list: t.List[t.Union[str, SourceTag]] = None,
-):
+) -> None:
     if out_file is None and not show:
         raise RuntimeError(
             "No out_file specified and show set to False - nothing to do."

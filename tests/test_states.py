@@ -73,7 +73,11 @@ def test_alo_states(
     j_segment_threshold_size,
 ):
     pd.set_option("display.max_columns", None)
-    levels_new = read_mvl_energies(alo_marvel_energies_file, marvel_qn_cols)
+    levels_new = read_mvl_energies(
+        alo_marvel_energies_file,
+        marvel_qn_cols,
+        energy_cols=["energy", "unc", "degree"],
+    )
     print(levels_new)
 
     def temp_set_omega(state: str, fine_struct: str) -> float:

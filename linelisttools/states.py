@@ -21,19 +21,104 @@ class SourceTag(Enum):
     PREDICTED_SHIFT = "PS_2"
     EXTRAPOLATED_SHIFT = "PS_3"
     PSEUDO_EXPERIMENTAL = "PE"
+    # TODO: PS_1-3 should be internal and not output - only used for distinguishing states for printing!
 
 
 def read_mvl_energies(
     file: str, qn_cols: t.List[str], energy_cols: t.List[str] = None
 ) -> pd.DataFrame:
     if energy_cols is None:
-        energy_cols = ["energy", "unc", "degree"]
+        energy_cols = ["energy", "unc", "stddev", "degree"]
     elif len(energy_cols) != 3:
         raise RuntimeError(
             "energy_cols argument must be  contain three values for the energy, uncertainty and degree columns."
         )
     mvl_energy_cols = qn_cols + energy_cols
-    return pd.read_csv(file, sep=r"\s+", names=mvl_energy_cols)
+    return pd.read_csv(file, delim_whitespace=True, names=mvl_energy_cols)
+
+
+def read_states_file(
+    file: str,
+    states_cols: t.List[str],
+) -> pd.DataFrame:
+    """
+    Reads an ExoMol states file into a DataFrame object and returns it.
+
+    Args:
+        file:        The string path to the state file.
+        states_cols: The columns contained in the states file.
+
+    Returns:
+        A DataFrame object containing the states file data.
+    """
+    return pd.read_csv(file, delim_whitespace=True, names=states_cols)
+
+
+def read_exomol_states_file(
+    file: str,
+    parity_cols: t.Union[str, t.List[str]],
+    symmetry_cols: t.Union[str, t.List[str]],
+    vibrational_qn_cols: t.Union[str, t.List[str]],
+    other_qn_cols: t.Union[str, t.List[str]],
+    is_hyperfine: bool = False,
+    has_unc: bool = False,
+    has_lifetime: bool = False,
+    symmetry_counting_cols: t.Union[str, t.List[str]] = None,
+    has_isomer: bool = False,
+    has_source_tag: bool = False,
+) -> pd.DataFrame:
+    """
+    Reads an ExoMol states file into a DataFrame object and returns it.
+
+    An ExoMol states file's first four columns must be: ID, Energy, g (total degeneracy) and the rigorous quantum number
+    J (or F in the case of hyperfine resolved states). If an uncertainty is present then it will be the fifth column.
+    Likewise, lifetime will be the subsequent column if present. These should be followed by the parity column(s), the
+    electronic state (for diatomics) or symmetry (for triatomics or polyatomics). These can be followed some
+    symmetry/group counting number column(s) and a nuclear spin isomer columns. The vibrational quantum number column(s)
+    and subsequently any remaining other quantum number column(s) appear. The last potential column is the source tag
+    column.
+
+    Args:
+        file:                   The string path to the state file.
+        parity_cols:            The parity column(s) in the states file: either total parity, rotationless parity or
+            both.
+        symmetry_cols:          The symmetry column(s) in the states file.
+        vibrational_qn_cols:    The vibrational quantum number column(s) in the states file.
+        other_qn_cols:          Any remaining quantum number column(s) in the sattes file.
+        is_hyperfine:           Whether the states file is hyperfine resolved.
+        has_unc:                Whether the states file contains an uncertainty column.
+        has_lifetime:           Whether the states file contains a lifetime column.
+        symmetry_counting_cols: The names of any symmetry/group counting number columns.
+        has_isomer:             Whether the states file contains a nuclear spin isomer column.
+        has_source_tag:         Whether the states file contains a source_tag column.
+
+    Returns:
+        A DataFrame object containing the states file data.
+    """
+    rigorous_qn_col = "F" if is_hyperfine else "J"
+    states_cols = ["id", "energy", "g", rigorous_qn_col]
+    if has_unc:
+        states_cols.append("unc")
+
+    if has_lifetime:
+        states_cols.append("lifetime")
+
+    states_cols.extend(parity_cols)
+    states_cols.extend(symmetry_cols)
+
+    if symmetry_counting_cols is not None:
+        states_cols.append(symmetry_counting_cols)
+
+    if has_isomer:
+        states_cols.append("ns_iso")
+
+    states_cols.extend(vibrational_qn_cols)
+    states_cols.extend(other_qn_cols)
+
+    if has_source_tag:
+        states_cols.append("source_tag")
+
+    return pd.read_csv(file, delim_whitespace=True, names=states_cols)
 
 
 def propagate_error_in_mean(unc_list: t.List[float]) -> float:
@@ -60,6 +145,11 @@ def match_levels(
     overwrite_non_match_qn_cols: bool = False,
 ) -> t.Tuple[pd.DataFrame, pd.DataFrame]:
     """
+    Does passing out the shift_table make things easier or is it too constraining for later processes to use the
+    predefined grouping from the match quantum numbers? Allow subsequent methods to redo the grouping or is that just
+    extra room for error/mistakes?
+
+    Double-check that the isotopologue match works as intended.
 
     Args:
         levels_initial:

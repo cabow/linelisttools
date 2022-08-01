@@ -4,10 +4,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 
+# TODO: Add implicit handling for states file output in the below format where "?" denotes optional column and "+" one
+#  or more columns matching the description.
+#  ID | Energy | g | J/F | unc? | lifetime? | parity_tot | parity_norot? | state/sym | sym_num? | ns_iso? | vib_qn+ |
+#  other_qn+ | source_tag.
+
 
 def output_data(
     data: pd.DataFrame, filename: str, fortran_format_list: t.List, n_workers: int = 8
-):
+) -> None:
     worker = functools.partial(format_row, fortran_format_list)
 
     with open(filename, "w+") as f, ThreadPoolExecutor(max_workers=n_workers) as e:
