@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import tqdm
 
-from linelisttools.concurrence import yield_grouped_data
+from .concurrence import yield_grouped_data
 
 
 def calc_weighted_mean_energy(

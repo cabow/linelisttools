@@ -1,27 +1,18 @@
 import functools
 import math
 import typing as t
-from enum import Enum
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tqdm
+from pandas.core.groupby import GroupBy
 from sklearn.linear_model import HuberRegressor
 from sklearn.preprocessing import StandardScaler
 
-from linelisttools.concurrence import ExecutorType, yield_grouped_data
-
-
-class SourceTag(Enum):
-    CALCULATED = "Ca"
-    MARVELISED = "Ma"
-    EFFECTIVE_HAMILTONIAN = "EH"
-    PARITY_PAIR = "PS_1"
-    PREDICTED_SHIFT = "PS_2"
-    EXTRAPOLATED_SHIFT = "PS_3"
-    PSEUDO_EXPERIMENTAL = "PE"
-    # TODO: PS_1-3 should be internal and not output - only used for distinguishing states for printing!
+from .concurrence import ExecutorType, yield_grouped_data
+from .format import SourceTag
+from .plot import get_vibrant_colors
 
 
 def read_mvl_energies(
@@ -134,7 +125,6 @@ def match_levels(
     levels_new: pd.DataFrame,
     qn_match_cols: t.List[str],
     match_source_tag: SourceTag,
-    shift_table_qn_cols: t.List[str],
     levels_new_qn_cols: t.List[str] = None,
     suffixes: t.Tuple[str, str] = None,
     energy_col: str = "energy",
@@ -143,7 +133,7 @@ def match_levels(
     id_col: str = "ID",
     is_isotopologue_match: bool = False,
     overwrite_non_match_qn_cols: bool = False,
-) -> t.Tuple[pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     """
     Does passing out the shift_table make things easier or is it too constraining for later processes to use the
     predefined grouping from the match quantum numbers? Allow subsequent methods to redo the grouping or is that just
@@ -156,7 +146,6 @@ def match_levels(
         levels_new:
         qn_match_cols:
         match_source_tag:
-        shift_table_qn_cols:
         levels_new_qn_cols:
         suffixes:
         energy_col:
@@ -169,14 +158,14 @@ def match_levels(
     Returns:
 
     """
+    # TODO: The use of the shift_table here only makes sense if any grouping/predictions is done on the same qn set; the
+    #  predict shifts method re-groups the data on a qn subset and would fail if the fit_qn grouping is not all present
+    #  in the shift_table group. Rework to ignore the shift table.
     if suffixes is None:
         suffixes = ("_calc", "_obs")
 
     if levels_new_qn_cols is None:
         levels_new_qn_cols = qn_match_cols
-
-    # if energy_col_name is None:
-    #     energy_col_name = 'energy'
 
     # Take an inner merge to only get the levels that do have matches.
     levels_matched = levels_initial.merge(
@@ -193,13 +182,13 @@ def match_levels(
         )
         # TODO: Change to error, or add input fail_on_no_matches?
 
-    energy_original_col = energy_col + suffixes[0]
-    energy_marvel_col = energy_col + suffixes[1]
+    energy_calc_col = energy_col + suffixes[0]
+    energy_obs_col = energy_col + suffixes[1]
     energy_dif_col = energy_col + "_dif"
     energy_dif_mag_col = energy_dif_col + "_mag"
 
     levels_matched[energy_dif_col] = levels_matched.apply(
-        lambda x: x[energy_marvel_col] - x[energy_original_col], axis=1
+        lambda x: x[energy_obs_col] - x[energy_calc_col], axis=1
     )
     levels_matched[energy_dif_mag_col] = levels_matched[energy_dif_col].apply(
         lambda x: abs(x)
@@ -215,7 +204,7 @@ def match_levels(
     qn_dupe_cols = (
         qn_match_cols
         if len(qn_cols_not_match) == 0
-        else qn_match_cols + [energy_marvel_col]
+        else qn_match_cols + [energy_obs_col]
     )
 
     levels_matched_dup = levels_matched[
@@ -246,16 +235,16 @@ def match_levels(
     # Check the 0 energy level.
     zero_energy_level_matches = len(
         levels_matched.loc[
-            (levels_matched[energy_original_col] == 0)
-            & (levels_matched[energy_marvel_col] == 0)
+            (levels_matched[energy_calc_col] == 0)
+            & (levels_matched[energy_obs_col] == 0)
         ]
     )
     if zero_energy_level_matches != 1:
         raise RuntimeError(
             "0 ENERGY LEVELS DO NOT MATCH ASSIGNMENTS IN BOTH DATASETS.\nORIGINAL:\n",
-            levels_matched.loc[levels_matched[energy_original_col] == 0],
+            levels_matched.loc[levels_matched[energy_calc_col] == 0],
             "\nUPDATE:\n",
-            levels_matched.loc[levels_matched[energy_marvel_col] == 0],
+            levels_matched.loc[levels_matched[energy_obs_col] == 0],
         )
 
     if not is_isotopologue_match:
@@ -272,9 +261,9 @@ def match_levels(
         levels_new_to_concat = levels_new[
             levels_new.index.isin(levels_new_to_concat_idx)
         ]
-        # Rename energy_col_name in the rows to be concatenated to energy_marvel_col to avoid creating a new column.
+        # Rename energy_col_name in the rows to be concatenated to energy_obs_col to avoid creating a new column.
         levels_new_to_concat = levels_new_to_concat.rename(
-            columns={energy_col: energy_marvel_col}
+            columns={energy_col: energy_obs_col}
         )
         if len(qn_cols_not_match) > 0:
             levels_new_to_concat = levels_new_to_concat.rename(
@@ -285,28 +274,10 @@ def match_levels(
 
     levels_matched[source_tag_col] = match_source_tag.value
     # TODO: Change to rename original column? Or worth keeping both?
-    levels_matched["energy_final"] = levels_matched[energy_marvel_col]
-
-    # Create table to provide energy shifts and std (for unc estimates) based on a qn grouping.
-    shift_table = (
-        levels_matched.loc[
-            (~levels_matched[energy_original_col].isna())
-            & (~levels_matched[energy_marvel_col].isna())
-        ]
-        .groupby(by=shift_table_qn_cols, as_index=False)
-        .apply(
-            lambda x: pd.Series(
-                {
-                    "energy_dif_mean": np.average(x[energy_dif_col]),
-                    "energy_dif_unc": propagate_error_in_mean(x[unc_col]),
-                }
-            )
-        )
-    )
-    print("SHIFT TABLE: \n", shift_table)
+    levels_matched["energy_final"] = levels_matched[energy_obs_col]
 
     # Rename original levels' energy to match the column name in levels_matched
-    levels_initial = levels_initial.rename(columns={energy_col: energy_original_col})
+    levels_initial = levels_initial.rename(columns={energy_col: energy_calc_col})
     # Add missing original levels that are not in the final matching set
     # levels_matched = levels_matched.append(levels_initial.loc[~levels_initial['id'].isin(levels_matched['id'])])
     levels_initial_to_concat = levels_initial.loc[
@@ -327,6 +298,12 @@ def match_levels(
 
     levels_matched = pd.concat([levels_matched, levels_initial_to_concat])
 
+    # Create table to provide energy shifts and std (for unc estimates) based on a qn grouping.
+    # shift_table = generate_shift_table(states=levels_matched, shift_table_qn_cols=shift_table_qn_cols,
+    #                                    energy_calc_col=energy_calc_col, energy_obs_col=energy_obs_col,
+    #                                    energy_dif_col=energy_dif_col, unc_col=unc_col)
+    # print("SHIFT TABLE: \n", shift_table)
+
     if overwrite_non_match_qn_cols and len(qn_cols_not_match) > 0:
         for qn_col_not_match in qn_cols_not_match:
             levels_matched[qn_col_not_match] = np.where(
@@ -337,7 +314,30 @@ def match_levels(
             del levels_matched[qn_col_not_match + suffixes[0]]
             del levels_matched[qn_col_not_match + suffixes[1]]
 
-    return levels_matched, shift_table
+    return levels_matched
+
+
+def generate_shift_table(
+    states: pd.DataFrame,
+    shift_table_qn_cols: t.List[str],
+    energy_calc_col: str = "energy_calc",
+    energy_obs_col: str = "energy_obs",
+    energy_dif_col: str = "energy_dif",
+    unc_col: str = "unc",
+) -> pd.DataFrame:
+    shift_table = (
+        states.loc[(~states[energy_calc_col].isna()) & (~states[energy_obs_col].isna())]
+        .groupby(by=shift_table_qn_cols, as_index=False)
+        .apply(
+            lambda x: pd.Series(
+                {
+                    "energy_dif_mean": np.average(x[energy_dif_col]),
+                    "energy_dif_unc": propagate_error_in_mean(x[unc_col]),
+                }
+            )
+        )
+    )
+    return shift_table
 
 
 def estimate_uncertainty(
@@ -402,12 +402,34 @@ def set_predicted_unc(
     return std + unc_extrapolated
 
 
+def generate_fit_groups(
+    states: pd.DataFrame,
+    fit_qn_list: t.List[str],
+    fit_x_col: str = "J",
+    energy_calc_col: str = "energy_calc",
+    energy_obs_col: str = "energy_obs",
+    energy_dif_col: str = "energy_dif",
+    unc_col: str = "unc",
+) -> GroupBy:
+    shift_table = generate_shift_table(
+        states=states,
+        shift_table_qn_cols=fit_qn_list + [fit_x_col],
+        energy_calc_col=energy_calc_col,
+        energy_obs_col=energy_obs_col,
+        energy_dif_col=energy_dif_col,
+        unc_col=unc_col,
+    )
+    return shift_table.groupby(by=fit_qn_list)
+
+
 def predict_shifts(
     states_matched: pd.DataFrame,
-    shift_table: pd.DataFrame,
     fit_qn_list: t.List[str],
     j_segment_threshold_size: int = 14,
     show_plot: bool = False,
+    energy_calc_col: str = "energy_calc",
+    energy_obs_col: str = "energy_obs",
+    energy_dif_col: str = "energy_dif",
     unc_col: str = "unc",
     j_col: str = "J",
     source_tag_col: str = "source_tag",
@@ -416,13 +438,17 @@ def predict_shifts(
 ) -> pd.DataFrame:
     """
 
+    The original, marvel and dif energy columns are intended to come from :func:`linelisttools.states.match_levels`,
+    based on the name of the energy column and suffixes passed to that method. Defaults to the same default values if
+    none are passed.
+
 
     Args:
         states_matched:           The matched Marvel/calculated states from which the obs.-calc. values to fit to are
             derived.
-        shift_table:              The shift table derived from the matches states, providing mean obs.-calc. shifts for
-            the input states grouped by an arbitrary set of quantum numbers. Generally this grouping should be the same
-            as the quantum numbers provided in fit_qn_list.
+        # shift_table:              The shift table derived from the matches states, providing mean obs.-calc. shifts for
+        #     the input states grouped by an arbitrary set of quantum numbers. Generally this grouping should be the same
+        #     as the quantum numbers provided in fit_qn_list.
         fit_qn_list:              The list of arbitrary quantum numbers to group the obs.-calc. trends on for fitting.
             Generally should be the same as those used to generate the shift table. All quantum numbers must exist as
              columns within the shift_table and levels_matched DataFrames.
@@ -430,6 +456,9 @@ def predict_shifts(
             The segments that obs.-calc. predictions are fit to will increase in size if multiple sets of missing data
             exist within an array of sequential J values of length equal to this argument.
         show_plot:                Determines whether plots of the input and fitted data are shown.
+        energy_calc_col:          The string column name for the calculated energy column in states_matched.
+        energy_obs_col:           The string column name for the observed energy column in states_matched
+        energy_dif_col:           The string column name for the energy difference column in states_matched
         unc_col:                  The string column name for the uncertainty column in states_matched.
         j_col:                    The string column name for the J column in states_matched.
         source_tag_col:           The string column name for the source tag column in states_matched.
@@ -460,9 +489,17 @@ def predict_shifts(
     #     )
 
     worker = functools.partial(
-        fit_predictions, "#8b4513", j_segment_threshold_size, j_col, show_plot
+        fit_predictions, j_segment_threshold_size, j_col, show_plot
     )
-    shift_groups = shift_table.groupby(by=fit_qn_list)
+    shift_groups = generate_fit_groups(
+        states=states_matched,
+        fit_qn_list=fit_qn_list,
+        fit_x_col=j_col,
+        energy_calc_col=energy_calc_col,
+        energy_obs_col=energy_obs_col,
+        energy_dif_col=energy_dif_col,
+        unc_col=unc_col,
+    )
     with executor_type.value(max_workers=n_workers) as e:
         for result in tqdm.tqdm(
             e.map(worker, yield_grouped_data(shift_groups)), total=len(shift_groups)
@@ -489,20 +526,25 @@ def predict_shifts(
         & (~states_matched["pe_fit_energy_shift"].isna())
         & (~states_matched["energy_calc"].isna()),
         source_tag_col,
-    ] = "PS_2"
+    ] = SourceTag.PS_LINEAR_REGRESSION
     states_matched[unc_col] = np.where(
-        states_matched[source_tag_col] == "PS_2",
+        states_matched[source_tag_col] == SourceTag.PS_LINEAR_REGRESSION,
         states_matched["pe_fit_unc"],
         states_matched[unc_col],
     )
     states_matched["energy_final"] = np.where(
-        states_matched[source_tag_col] == "PS_2",
+        states_matched[source_tag_col] == SourceTag.PS_LINEAR_REGRESSION,
         states_matched["energy_calc"] + states_matched["pe_fit_energy_shift"],
         states_matched["energy_final"],
     )
     del states_matched["pe_fit_energy_shift"]
     del states_matched["pe_fit_unc"]
-    print("PS_2: \n", states_matched.loc[states_matched[source_tag_col] == "PS_2"])
+    print(
+        "PS_2: \n",
+        states_matched.loc[
+            states_matched[source_tag_col] == SourceTag.PS_LINEAR_REGRESSION
+        ],
+    )
 
     # Update energies with higher-J shift extrapolations:
     j_max_col = j_col + "_max"
@@ -527,7 +569,7 @@ def predict_shifts(
         & (~states_matched["energy_calc"].isna())
         & (states_matched[j_col] > states_matched[j_max_col]),
         source_tag_col,
-    ] = "PS_3"
+    ] = SourceTag.PS_EXTRAPOLATION
     # Scale unc based on j over j_max.
     # states_matched['unc'] = states_matched.apply(
     #     lambda x: scale_uncertainty(std=x['pe_extrapolate_energy_shift_std'], std_scale=2, j_val=x['j'],
@@ -542,19 +584,24 @@ def predict_shifts(
             j_val=x[j_col],
             j_max=x[j_max_col],
         )
-        if x[source_tag_col] == "PS_3"
+        if x[source_tag_col] == SourceTag.PS_EXTRAPOLATION
         else x[unc_col],
         axis=1,
     )
     states_matched["energy_final"] = np.where(
-        states_matched[source_tag_col] == "PS_3",
+        states_matched[source_tag_col] == SourceTag.PS_EXTRAPOLATION,
         states_matched["energy_calc"] + states_matched["pe_extrapolate_energy_shift"],
         states_matched["energy_final"],
     )
     del states_matched[j_max_col]
     del states_matched["pe_extrapolate_energy_shift"]
     del states_matched["pe_extrapolate_energy_shift_std"]
-    print("PS_3: \n", states_matched.loc[states_matched[source_tag_col] == "PS_3"])
+    print(
+        "PS_3: \n",
+        states_matched.loc[
+            states_matched[source_tag_col] == SourceTag.PS_EXTRAPOLATION
+        ],
+    )
 
     # UNNECESSARY IF NOT OUTPUTTING THESE DATAFRAMES.
     # Add shift predictions to shift table.
@@ -587,7 +634,6 @@ def predict_shifts(
 
 
 def fit_predictions(
-    colour: str,
     j_segment_threshold_size: int,
     j_col: str,
     show_plot: bool,
@@ -596,7 +642,6 @@ def fit_predictions(
     """
 
     Args:
-        colour:
         j_segment_threshold_size:
         j_col:
         show_plot:
@@ -611,6 +656,7 @@ def fit_predictions(
     fit_qn_list = tuple(grouped_data[0])
     df_group = grouped_data[1]
     j_max = df_group[j_col].max()
+    # TODO: Is this correct for integer J?
     j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
     missing_j = np.array(np.setdiff1d(j_coverage_to_max, df_group[j_col]))
     if len(missing_j) > 0:
@@ -626,12 +672,12 @@ def fit_predictions(
                 df_group["energy_dif_mean"],
                 marker="x",
                 linewidth=0.5,
-                facecolors=colour,
+                facecolors=get_vibrant_colors(1),
                 label=" ".join(str(qn) for qn in fit_qn_list),
                 zorder=1,
             )
         for j_segment in missing_j_segments:
-            # If the segment is entirely within the slice then the wing size is half the threshold. This
+            # If the segment is entirely within the slice then the wing size is half the threshold.
             if (
                 min(j_segment) > df_group[j_col].min()
                 and max(j_segment) < df_group[j_col].max()
@@ -992,17 +1038,17 @@ def set_calc_states(
     # remaining states left unchanged.
     states[source_tag_col] = np.where(
         states[source_tag_col].isna(),
-        SourceTag.CALCULATED.value,
+        SourceTag.CALCULATED,
         states[source_tag_col],
     )
     states[energy_final_col] = np.where(
-        states[source_tag_col] == SourceTag.CALCULATED.value,
+        states[source_tag_col] == SourceTag.CALCULATED,
         states[energy_calc_col],
         states[energy_final_col],
     )
     states[unc_col] = states.apply(
         lambda x: estimate_uncertainty(x[j_col], x[v_col], unc_j_factor, unc_v_factor)
-        if x[source_tag_col] == SourceTag.CALCULATED.value
+        if x[source_tag_col] == SourceTag.CALCULATED
         else x[unc_col],
         axis=1,
     )
@@ -1012,12 +1058,14 @@ def set_calc_states(
 
 def shift_parity_pairs(
     states: pd.DataFrame,
-    shift_table: pd.DataFrame,
-    source_tag_col: str = "source_tag",
-    unc_col: str = "unc",
-    id_col: str = "ID",
-    energy_final_col: str = "energy_final",
+    shift_table_qn_cols: t.List[str],
     energy_calc_col: str = "energy_calc",
+    energy_obs_col: str = "energy_obs",
+    energy_dif_col: str = "energy_dif",
+    energy_final_col: str = "energy_final",
+    unc_col: str = "unc",
+    source_tag_col: str = "source_tag",
+    id_col: str = "ID",
 ) -> pd.DataFrame:
     """
     Updates levels that have not had their source_tag set but have a level with equivalent quantum numbers in the Marvel
@@ -1027,28 +1075,38 @@ def shift_parity_pairs(
     manually created for the set of quantum numbers used to determine a parity pair.
 
     Args:
-        states:           A DataFrame containing the states to search for parity pairs in.
-        shift_table:      The shift table for the states file, defining the mean energy shift for all states matching a
-            set of quantum numbers.
-        source_tag_col:   The string label for the source tag column in states.
-        unc_col:          The string label for the uncertainty column in states.
-        id_col:           The string label for the ID column in states.
-        energy_final_col: The string label for the final energy column in states.
-        energy_calc_col:  The string label for the calculated energy column in states.
+        states:              A DataFrame containing the states to search for parity pairs in.
+        shift_table_qn_cols: The quantum number columns in states that should be grouped on to find the parity shift for
+            each J; this list should not include "J".
+        source_tag_col:      The string label for the source tag column in states.
+        unc_col:             The string label for the uncertainty column in states.
+        id_col:              The string label for the ID column in states.
+        energy_final_col:    The string label for the final energy column in states.
+        energy_calc_col:     The string label for the calculated energy column in states.
+        energy_obs_col:      The string label for the observed energy column in states.
+        energy_dif_col:      The string label for the energy difference column in states.
 
     Returns:
         The states DataFrame updated with the mean energy shift from the shift table applied to any parity pair
             counterparts that were not updated with Marvel data.
     """
+    shift_table = generate_shift_table(
+        states=states,
+        shift_table_qn_cols=shift_table_qn_cols,
+        energy_calc_col=energy_calc_col,
+        energy_obs_col=energy_obs_col,
+        energy_dif_col=energy_dif_col,
+        unc_col=unc_col,
+    )
     # energy_dif_mean and energy_dif_unc are implicit column names of the shift table: other columns are the quantum
     # numbers it was grouped on.
     energy_dif_mean_col = "energy_dif_mean"
     energy_dif_unc_col = "energy_dif_unc"
-    shift_table_qn_cols = [
-        qn
-        for qn in shift_table.columns
-        if qn not in (energy_dif_mean_col, energy_dif_unc_col)
-    ]
+    # shift_table_qn_cols = [
+    #     qn
+    #     for qn in shift_table.columns
+    #     if qn not in (energy_dif_mean_col, energy_dif_unc_col)
+    # ]
 
     # Inner merge here gets us only the states that have matching quantum numbers to an entry in the shift table but has
     # not had its source_tag set, i.e.: those for which we have Marvel data for another level with the same quantum
@@ -1071,7 +1129,7 @@ def shift_parity_pairs(
     )
     states.loc[
         states[id_col].isin(states_missing_parity_pairs[id_col]), source_tag_col
-    ] = "PS_1"
+    ] = SourceTag.PS_PARITY_PAIR
     # Take the energy_final_temp from the merged DataFrame as energy_final where it exists, and the energy_dif_unc as
     # the unc for these rows.
     energy_final_temp_col = energy_final_col + "_temp"

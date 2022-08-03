@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from linelisttools.states import SourceTag
+from .format import SourceTag
 
 
 class PlotType(IntEnum):

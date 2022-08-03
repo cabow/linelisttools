@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 
 from linelisttools.concurrence import ExecutorType
+from linelisttools.format import SourceTag
 from linelisttools.states import (
-    SourceTag,
     match_levels,
     predict_shifts,
     read_mvl_energies,
@@ -124,12 +124,12 @@ def test_alo_states(
             "Omega",
         ],
     )
-    matched_states, shift_table = match_levels(
+    # matched_states, shift_table = match_levels(
+    matched_states = match_levels(
         levels_initial=levels_initial,
         levels_new=levels_new,
         qn_match_cols=qn_match_cols,
         match_source_tag=match_source_tag,
-        shift_table_qn_cols=shift_table_qn_cols,
         levels_new_qn_cols=levels_new_qn_cols,
         suffixes=suffixes,
         energy_col=energy_col,
@@ -142,8 +142,7 @@ def test_alo_states(
     print(matched_states)
     shift_table_qn_cols.remove(j_col)
     matched_states = predict_shifts(
-        levels_matched=matched_states,
-        shift_table=shift_table,
+        states_matched=matched_states,
         fit_qn_list=shift_table_qn_cols,
         j_segment_threshold_size=j_segment_threshold_size,
         show_plot=True,
@@ -154,16 +153,20 @@ def test_alo_states(
         n_workers=8,
     )
     print(matched_states)
-    energy_final_col = energy_col + "_final"
     energy_calc_col = energy_col + "_calc"
+    energy_obs_col = energy_col + "_obs"
+    energy_dif_col = energy_col + "_dif"
+    energy_final_col = energy_col + "_final"
     matched_states = shift_parity_pairs(
         states=matched_states,
-        shift_table=shift_table,
-        source_tag_col=source_tag_col,
-        unc_col=unc_col,
-        id_col=id_col,
-        energy_final_col=energy_final_col,
+        shift_table_qn_cols=shift_table_qn_cols,
         energy_calc_col=energy_calc_col,
+        energy_obs_col=energy_obs_col,
+        energy_dif_col=energy_dif_col,
+        energy_final_col=energy_final_col,
+        unc_col=unc_col,
+        source_tag_col=source_tag_col,
+        id_col=id_col,
     )
     matched_states = set_calc_states(
         states=matched_states,
