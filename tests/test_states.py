@@ -7,6 +7,7 @@ import pytest
 from linelisttools.concurrence import ExecutorType
 from linelisttools.format import SourceTag
 from linelisttools.states import (
+    ExoMolStatesHeader,
     match_levels,
     predict_shifts,
     read_mvl_energies,
@@ -184,3 +185,18 @@ def test_alo_states(
     )
     matched_states[id_col] = np.arange(1, len(matched_states) + 1)
     print(matched_states)
+
+
+def test_exomolstatesheader_formatting():
+    header = ExoMolStatesHeader(
+        rigorous_qn="F",
+        unc=None,
+        parity=ExoMolStatesHeader.StatesParity.ROTATIONLESS_PARITY,
+        symmetry="sym",
+        isomer=["ns_iso", "iso"],
+        vibrational_qn=["v1", "v2"],
+        other_qn=["J", "Omega"],
+        source_tag="BEANS",
+    )
+    header_out = header.get_header()
+    print(header_out)

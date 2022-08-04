@@ -178,9 +178,7 @@ def plot_state_coverage(
         electron_configurations:  A list of the possible electron configurations to plot.
         energy_col:               The string column name for the energy column in the energies DataFrame.
     """
-    # TODO: Clarify that electron_configurations is intended to provie the left-to-right plotting order for configs.
-    # TODO: Test inbuilt sizes/shifts (i.e.: labelpad) or different scale plots. Allow for plotting without electronic
-    #  configuration.
+    # TODO: Clarify that electron_configurations is intended to provide the left-to-right plotting order for configs.
     if state_list is None and state_configuration_dict is None:
         raise RuntimeError(
             "No values passed for state_list or state_configuration_dict. Either specify which states to plot by "

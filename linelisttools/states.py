@@ -1,6 +1,8 @@
 import functools
 import math
 import typing as t
+from collections.abc import Iterable
+from enum import Enum
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,12 +16,195 @@ from .concurrence import ExecutorType, yield_grouped_data
 from .format import SourceTag
 from .plot import get_vibrant_colors
 
+# TODO: Create states class that hold the state columns in order, e.g.: allowing for a "vibrational_qn_cols" field that
+#  contains one or more columns. This should be passed in to methods to avoid passing individual column names. Can also
+#  be used for formatting by containing the fortran format mapping.
+
+
+class ExoMolStatesHeader:
+    _state_id_default = "id"
+    _energy_default = "energy"
+    _degeneracy_default = "degeneracy"
+    _rigorous_qn_default = "J"
+    _unc_default = "unc"
+    _lifetime_default = "lifetime"
+    _source_tag_default = "source_tag"
+
+    class StatesParity(Enum):
+        TOTAL_PARITY = "parity_tot"
+        ROTATIONLESS_PARITY = "parity_norot"
+
+        def __str__(self):
+            return str(self.value)
+
+    def __init__(
+        self,
+        state_id: str = _state_id_default,
+        energy: str = _energy_default,
+        degeneracy: str = _degeneracy_default,
+        rigorous_qn: str = _rigorous_qn_default,
+        unc: t.Optional[str] = _unc_default,
+        lifetime: t.Optional[str] = _lifetime_default,
+        parity: t.Union[StatesParity, t.List[StatesParity]] = StatesParity.TOTAL_PARITY,
+        symmetry: t.Union[str, t.List[str]] = None,
+        counting_number: t.Optional[t.Union[str, t.List[str]]] = None,
+        isomer: t.Optional[t.Union[str, t.List[str]]] = None,
+        vibrational_qn: t.Union[str, t.List[str]] = None,
+        other_qn: t.Optional[t.Union[str, t.List[str]]] = None,
+        source_tag: t.Optional[str] = _source_tag_default,
+    ):
+        self._state_id = state_id
+        self._energy = energy
+        self._degeneracy = degeneracy
+        self._rigorous_qn = rigorous_qn
+        self._unc = unc
+        self._lifetime = lifetime
+        self._parity = parity
+        self._symmetry = symmetry
+        self._counting_number = counting_number
+        self._isomer = isomer
+        self._vibrational_qn = vibrational_qn
+        self._other_qn = other_qn
+        self._source_tag = source_tag
+
+    def get_header(self) -> t.List[str]:
+        def flatten(nested_list):
+            for item in nested_list:
+                if isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+                    yield from flatten(item)
+                else:
+                    yield str(item)
+
+        header_order = [
+            self._state_id,
+            self._energy,
+            self._degeneracy,
+            self._rigorous_qn,
+            self._unc,
+            self._lifetime,
+            self._parity,
+            self._symmetry,
+            self._counting_number,
+            self._isomer,
+            self._vibrational_qn,
+            self._other_qn,
+            self._source_tag,
+        ]
+        header_order = [column for column in header_order if column is not None]
+
+        return list(flatten(header_order))
+
+    @property
+    def state_id(self) -> str:
+        return self._state_id
+
+    @state_id.setter
+    def state_id(self, value: str):
+        self._state_id = value
+
+    @property
+    def energy(self) -> str:
+        return self._energy
+
+    @energy.setter
+    def energy(self, value: str):
+        self._energy = value
+
+    @property
+    def degeneracy(self) -> str:
+        return self._degeneracy
+
+    @degeneracy.setter
+    def degeneracy(self, value: str):
+        self._degeneracy = value
+
+    @property
+    def rigorous_qn(self) -> str:
+        return self._rigorous_qn
+
+    @rigorous_qn.setter
+    def rigorous_qn(self, value: str):
+        self._rigorous_qn = value
+
+    @property
+    def unc(self) -> t.Optional[str]:
+        return self._unc
+
+    @unc.setter
+    def unc(self, value: t.Optional[str]):
+        self._unc = value
+
+    @property
+    def lifetime(self) -> str:
+        return self._lifetime
+
+    @lifetime.setter
+    def lifetime(self, value: str):
+        self._lifetime = value
+
+    @property
+    def parity(self) -> t.Union[StatesParity, t.List[StatesParity]]:
+        return self._parity
+
+    @parity.setter
+    def parity(self, value: t.Union[StatesParity, t.List[StatesParity]]):
+        self._parity = value
+
+    @property
+    def symmetry(self) -> t.Union[str, t.List[str]]:
+        return self._symmetry
+
+    @symmetry.setter
+    def symmetry(self, value: t.Union[str, t.List[str]]):
+        self._symmetry = value
+
+    @property
+    def counting_number(self) -> t.Optional[t.Union[str, t.List[str]]]:
+        return self._counting_number
+
+    @counting_number.setter
+    def counting_number(self, value: t.Optional[t.Union[str, t.List[str]]]):
+        self._counting_number = value
+
+    @property
+    def isomer(self) -> t.Optional[t.Union[str, t.List[str]]]:
+        return self._isomer
+
+    @isomer.setter
+    def isomer(self, value: t.Optional[t.Union[str, t.List[str]]]):
+        self._isomer = value
+
+    @property
+    def vibrational_qn(self) -> t.Union[str, t.List[str]]:
+        return self._vibrational_qn
+
+    @vibrational_qn.setter
+    def vibrational_qn(self, value: t.Union[str, t.List[str]]):
+        self._vibrational_qn = value
+
+    @property
+    def other_qn(self) -> t.Optional[t.Union[str, t.List[str]]]:
+        return self._other_qn
+
+    @other_qn.setter
+    def other_qn(self, value: t.Optional[t.Union[str, t.List[str]]]):
+        self._other_qn = value
+
+    @property
+    def source_tag(self) -> t.Optional[str]:
+        return self._source_tag
+
+    @source_tag.setter
+    def source_tag(self, value: t.Optional[str]):
+        self._source_tag = value
+
 
 def read_mvl_energies(
     file: str, qn_cols: t.List[str], energy_cols: t.List[str] = None
 ) -> pd.DataFrame:
     if energy_cols is None:
-        energy_cols = ["energy", "unc", "stddev", "degree"]
+        energy_cols = ["energy", "unc", "unc2", "degree"]
+        # TODO: Change this when Marvel4 is released; there should be no second unc column.
     elif len(energy_cols) != 3:
         raise RuntimeError(
             "energy_cols argument must be  contain three values for the energy, uncertainty and degree columns."
@@ -139,7 +324,7 @@ def match_levels(
     predefined grouping from the match quantum numbers? Allow subsequent methods to redo the grouping or is that just
     extra room for error/mistakes?
 
-    Double-check that the isotopologue match works as intended.
+    TODO: Double-check that the isotopologue match works as intended; create test cases.
 
     Args:
         levels_initial:
@@ -158,9 +343,6 @@ def match_levels(
     Returns:
 
     """
-    # TODO: The use of the shift_table here only makes sense if any grouping/predictions is done on the same qn set; the
-    #  predict shifts method re-groups the data on a qn subset and would fail if the fit_qn grouping is not all present
-    #  in the shift_table group. Rework to ignore the shift table.
     if suffixes is None:
         suffixes = ("_calc", "_obs")
 
@@ -650,13 +832,12 @@ def fit_predictions(
     Returns:
 
     """
-    # TODO: Clean up internal plotting - does not work well with multithreading.
+    # TODO: Why does internal plotting not work well with multithreading - is this a IDE thing?
     shift_predictions = []
     extrapolate_j_shifts = []
     fit_qn_list = tuple(grouped_data[0])
     df_group = grouped_data[1]
     j_max = df_group[j_col].max()
-    # TODO: Is this correct for integer J?
     j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
     missing_j = np.array(np.setdiff1d(j_coverage_to_max, df_group[j_col]))
     if len(missing_j) > 0:
