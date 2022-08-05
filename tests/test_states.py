@@ -9,7 +9,9 @@ from linelisttools.format import SourceTag
 from linelisttools.states import (
     ExoMolStatesHeader,
     match_levels,
+    match_states,
     predict_shifts,
+    read_exomol_states,
     read_mvl_energies,
     set_calc_states,
     shift_parity_pairs,
@@ -34,8 +36,21 @@ def alo_states_file():
     "overwrite_non_match_qn_cols, j_segment_threshold_size",
     [
         (
-            ["state", "v", "J", "N", "fs", "parity"],
-            ["state", "v", "J", "parity", "Omega"],
+            [
+                "state",
+                "v",
+                "J",
+                "N",
+                "fs",
+                ExoMolStatesHeader.StatesParity.TOTAL_PARITY.value,
+            ],
+            [
+                "state",
+                "v",
+                "J",
+                ExoMolStatesHeader.StatesParity.TOTAL_PARITY.value,
+                "Omega",
+            ],
             SourceTag.MARVELISED,
             ["state", "v", "Omega", "J"],
             None,
@@ -43,10 +58,10 @@ def alo_states_file():
             "energy",
             "unc",
             "J",
-            "parity",
+            ExoMolStatesHeader.StatesParity.TOTAL_PARITY.value,
             "v",
             "source_tag",
-            "ID",
+            "id",
             False,
             False,
             14,
@@ -107,84 +122,102 @@ def test_alo_states(
     levels_new["Omega"] = levels_new.apply(
         lambda x: temp_set_omega(x["state"], x["fs"]), axis=1
     )
-    levels_initial = pd.read_csv(
-        alo_states_file,
-        delim_whitespace=True,
-        names=[
-            id_col,
-            energy_col,
-            "degeneracy",
-            j_col,
-            "lifetime",
-            parity_col,
-            "parity_norot",
-            "state",
-            v_col,
-            "Lambda",
-            "Sigma",
-            "Omega",
+    # levels_initial = pd.read_csv(
+    #     alo_states_file,
+    #     delim_whitespace=True,
+    #     names=[
+    #         id_col,
+    #         energy_col,
+    #         "degeneracy",
+    #         j_col,
+    #         "lifetime",
+    #         parity_col,
+    #         ExoMolStatesHeader.StatesParity.ROTATIONLESS_PARITY.value,
+    #         "state",
+    #         v_col,
+    #         "Lambda",
+    #         "Sigma",
+    #         "Omega",
+    #     ],
+    # )
+    states_header = ExoMolStatesHeader(
+        unc=None,
+        parity=[
+            ExoMolStatesHeader.StatesParity.TOTAL_PARITY,
+            ExoMolStatesHeader.StatesParity.ROTATIONLESS_PARITY,
         ],
+        symmetry="state",
+        vibrational_qn=v_col,
+        other_qn=["Lambda", "Sigma", "Omega"],
+        source_tag=None,
     )
-    # matched_states, shift_table = match_levels(
-    matched_states = match_levels(
-        levels_initial=levels_initial,
-        levels_new=levels_new,
+    states_calc = read_exomol_states(alo_states_file, states_header)
+    print(states_calc)
+    states_matched = match_states(
+        states_calc=states_calc,
+        states_obs=levels_new,
         qn_match_cols=qn_match_cols,
         match_source_tag=match_source_tag,
+        states_header=states_header,
         levels_new_qn_cols=levels_new_qn_cols,
         suffixes=suffixes,
-        energy_col=energy_col,
-        unc_col=unc_col,
-        source_tag_col=source_tag_col,
-        id_col=id_col,
         is_isotopologue_match=is_isotopologue_match,
         overwrite_non_match_qn_cols=overwrite_non_match_qn_cols,
     )
-    print(matched_states)
-    shift_table_qn_cols.remove(j_col)
-    matched_states = predict_shifts(
-        states_matched=matched_states,
+    # matched_states = match_levels(
+    #     levels_initial=levels_initial,
+    #     levels_new=levels_new,
+    #     qn_match_cols=qn_match_cols,
+    #     match_source_tag=match_source_tag,
+    #     levels_new_qn_cols=levels_new_qn_cols,
+    #     suffixes=suffixes,
+    #     energy_col=energy_col,
+    #     unc_col=unc_col,
+    #     source_tag_col=source_tag_col,
+    #     id_col=id_col,
+    #     is_isotopologue_match=is_isotopologue_match,
+    #     overwrite_non_match_qn_cols=overwrite_non_match_qn_cols,
+    # )
+    # print(states_matched)
+    # print(matched_states)
+    # assert matched_states.equals(states_matched)
+    shift_table_qn_cols.remove(states_header.rigorous_qn)
+    states_matched = predict_shifts(
+        states_matched=states_matched,
         fit_qn_list=shift_table_qn_cols,
+        states_header=states_header,
         j_segment_threshold_size=j_segment_threshold_size,
         show_plot=True,
-        unc_col=unc_col,
-        j_col=j_col,
-        source_tag_col=source_tag_col,
         executor_type=ExecutorType.THREADS,
         n_workers=8,
     )
-    print(matched_states)
-    energy_calc_col = energy_col + "_calc"
-    energy_obs_col = energy_col + "_obs"
-    energy_dif_col = energy_col + "_dif"
-    energy_final_col = energy_col + "_final"
-    matched_states = shift_parity_pairs(
-        states=matched_states,
+    print(states_matched)
+    energy_calc_col = states_header.energy + "_calc"
+    energy_obs_col = states_header.energy + "_obs"
+    energy_dif_col = states_header.energy + "_dif"
+    energy_final_col = states_header.energy + "_final"
+    states_matched = shift_parity_pairs(
+        states=states_matched,
+        states_header=states_header,
         shift_table_qn_cols=shift_table_qn_cols,
         energy_calc_col=energy_calc_col,
         energy_obs_col=energy_obs_col,
         energy_dif_col=energy_dif_col,
         energy_final_col=energy_final_col,
-        unc_col=unc_col,
-        source_tag_col=source_tag_col,
-        id_col=id_col,
     )
-    matched_states = set_calc_states(
-        states=matched_states,
+    states_matched = set_calc_states(
+        states=states_matched,
+        states_header=states_header,
         unc_j_factor=0.0001,
         unc_v_factor=0.05,
-        source_tag_col=source_tag_col,
-        unc_col=unc_col,
-        j_col=j_col,
-        v_col=v_col,
         energy_final_col=energy_final_col,
         energy_calc_col=energy_calc_col,
     )
-    matched_states = matched_states.sort_values(
-        by=[j_col, parity_col, energy_final_col]
+    states_matched = states_matched.sort_values(
+        by=[states_header.rigorous_qn, parity_col, energy_final_col]
     )
-    matched_states[id_col] = np.arange(1, len(matched_states) + 1)
-    print(matched_states)
+    states_matched[states_header.state_id] = np.arange(1, len(states_matched) + 1)
+    print(states_matched)
 
 
 def test_exomolstatesheader_formatting():

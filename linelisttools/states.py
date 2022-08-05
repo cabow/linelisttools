@@ -16,12 +16,22 @@ from .concurrence import ExecutorType, yield_grouped_data
 from .format import SourceTag
 from .plot import get_vibrant_colors
 
-# TODO: Create states class that hold the state columns in order, e.g.: allowing for a "vibrational_qn_cols" field that
-#  contains one or more columns. This should be passed in to methods to avoid passing individual column names. Can also
-#  be used for formatting by containing the fortran format mapping.
 
-
+# TODO: Pass ExoMolStatesHeader in to methods to avoid passing individual column names. Can also be used for formatting
+#  by containing the fortran format mapping.
+#  Also add some way to handle with the resultant energy columns, i.e.: energy_final, etc.
 class ExoMolStatesHeader:
+    """
+    Stores the column names of an ExoMol states file. Certain columns are mandatory (ID, Energy, Degeneracy and a
+    rigorous quanutum number) and appear in the first four columns. Others have set positions if they exist such as
+    uncertainty which appears fifth; the lifetime appears after uncertainty if it exists else it is fifth. Other columns
+    representing parity (i.e.: total, rotationless), symmetry (electronic state, group symmetry), counting numbers
+    (i.e.: symmetry block counting), isomer labelling (i.e.: nuclear spin isomer, structural isomer), vibrational
+    quantum numbers and any other quantum numbers follow these in order and can each consist of multiple columns. The
+    final possible column is the source tag, which generally only appears in states file that have been Marvelised (or
+    are isotopologues of one).
+    """
+
     _state_id_default = "id"
     _energy_default = "energy"
     _degeneracy_default = "degeneracy"
@@ -30,6 +40,7 @@ class ExoMolStatesHeader:
     _lifetime_default = "lifetime"
     _source_tag_default = "source_tag"
 
+    # TODO: Come up with a better solution than this.
     class StatesParity(Enum):
         TOTAL_PARITY = "parity_tot"
         ROTATIONLESS_PARITY = "parity_norot"
@@ -134,6 +145,9 @@ class ExoMolStatesHeader:
     def unc(self, value: t.Optional[str]):
         self._unc = value
 
+    def default_unc(self):
+        self._unc = self._unc_default
+
     @property
     def lifetime(self) -> str:
         return self._lifetime
@@ -141,6 +155,9 @@ class ExoMolStatesHeader:
     @lifetime.setter
     def lifetime(self, value: str):
         self._lifetime = value
+
+    def default_lifetime(self):
+        self._lifetime = self._lifetime_default
 
     @property
     def parity(self) -> t.Union[StatesParity, t.List[StatesParity]]:
@@ -198,6 +215,9 @@ class ExoMolStatesHeader:
     def source_tag(self, value: t.Optional[str]):
         self._source_tag = value
 
+    def default_source_tag(self):
+        self._source_tag = self._source_tag_default
+
 
 def read_mvl_energies(
     file: str, qn_cols: t.List[str], energy_cols: t.List[str] = None
@@ -230,18 +250,8 @@ def read_states_file(
     return pd.read_csv(file, delim_whitespace=True, names=states_cols)
 
 
-def read_exomol_states_file(
-    file: str,
-    parity_cols: t.Union[str, t.List[str]],
-    symmetry_cols: t.Union[str, t.List[str]],
-    vibrational_qn_cols: t.Union[str, t.List[str]],
-    other_qn_cols: t.Union[str, t.List[str]],
-    is_hyperfine: bool = False,
-    has_unc: bool = False,
-    has_lifetime: bool = False,
-    symmetry_counting_cols: t.Union[str, t.List[str]] = None,
-    has_isomer: bool = False,
-    has_source_tag: bool = False,
+def read_exomol_states(
+    file: str, exomol_states_header: ExoMolStatesHeader
 ) -> pd.DataFrame:
     """
     Reads an ExoMol states file into a DataFrame object and returns it.
@@ -250,51 +260,20 @@ def read_exomol_states_file(
     J (or F in the case of hyperfine resolved states). If an uncertainty is present then it will be the fifth column.
     Likewise, lifetime will be the subsequent column if present. These should be followed by the parity column(s), the
     electronic state (for diatomics) or symmetry (for triatomics or polyatomics). These can be followed some
-    symmetry/group counting number column(s) and a nuclear spin isomer columns. The vibrational quantum number column(s)
-    and subsequently any remaining other quantum number column(s) appear. The last potential column is the source tag
-    column.
+    symmetry/group counting number column(s) and isomer column(s) (i.e.: nuclear spin isomer, structural isomer). The
+    vibrational quantum number column(s) and then any remaining other quantum number column(s) follow. The last
+    potential column is the source tag column.
 
     Args:
-        file:                   The string path to the state file.
-        parity_cols:            The parity column(s) in the states file: either total parity, rotationless parity or
-            both.
-        symmetry_cols:          The symmetry column(s) in the states file.
-        vibrational_qn_cols:    The vibrational quantum number column(s) in the states file.
-        other_qn_cols:          Any remaining quantum number column(s) in the sattes file.
-        is_hyperfine:           Whether the states file is hyperfine resolved.
-        has_unc:                Whether the states file contains an uncertainty column.
-        has_lifetime:           Whether the states file contains a lifetime column.
-        symmetry_counting_cols: The names of any symmetry/group counting number columns.
-        has_isomer:             Whether the states file contains a nuclear spin isomer column.
-        has_source_tag:         Whether the states file contains a source_tag column.
+        file:                 The string path to the state file.
+        exomol_states_header: An ExoMolStatesHeader object containing the string names for the states file columns.
 
     Returns:
         A DataFrame object containing the states file data.
     """
-    rigorous_qn_col = "F" if is_hyperfine else "J"
-    states_cols = ["id", "energy", "g", rigorous_qn_col]
-    if has_unc:
-        states_cols.append("unc")
-
-    if has_lifetime:
-        states_cols.append("lifetime")
-
-    states_cols.extend(parity_cols)
-    states_cols.extend(symmetry_cols)
-
-    if symmetry_counting_cols is not None:
-        states_cols.append(symmetry_counting_cols)
-
-    if has_isomer:
-        states_cols.append("ns_iso")
-
-    states_cols.extend(vibrational_qn_cols)
-    states_cols.extend(other_qn_cols)
-
-    if has_source_tag:
-        states_cols.append("source_tag")
-
-    return pd.read_csv(file, delim_whitespace=True, names=states_cols)
+    return pd.read_csv(
+        file, names=exomol_states_header.get_header(), delim_whitespace=True
+    )
 
 
 def propagate_error_in_mean(unc_list: t.List[float]) -> float:
@@ -305,44 +284,17 @@ def propagate_error_in_mean(unc_list: t.List[float]) -> float:
     return error
 
 
-def match_levels(
-    levels_initial: pd.DataFrame,
-    levels_new: pd.DataFrame,
+def match_states(
+    states_calc: pd.DataFrame,
+    states_obs: pd.DataFrame,
     qn_match_cols: t.List[str],
     match_source_tag: SourceTag,
+    states_header: ExoMolStatesHeader,
     levels_new_qn_cols: t.List[str] = None,
     suffixes: t.Tuple[str, str] = None,
-    energy_col: str = "energy",
-    unc_col: str = "unc",
-    source_tag_col: str = "source_tag",
-    id_col: str = "ID",
     is_isotopologue_match: bool = False,
     overwrite_non_match_qn_cols: bool = False,
 ) -> pd.DataFrame:
-    """
-    Does passing out the shift_table make things easier or is it too constraining for later processes to use the
-    predefined grouping from the match quantum numbers? Allow subsequent methods to redo the grouping or is that just
-    extra room for error/mistakes?
-
-    TODO: Double-check that the isotopologue match works as intended; create test cases.
-
-    Args:
-        levels_initial:
-        levels_new:
-        qn_match_cols:
-        match_source_tag:
-        levels_new_qn_cols:
-        suffixes:
-        energy_col:
-        unc_col:
-        source_tag_col:
-        id_col:
-        is_isotopologue_match:
-        overwrite_non_match_qn_cols:
-
-    Returns:
-
-    """
     if suffixes is None:
         suffixes = ("_calc", "_obs")
 
@@ -350,31 +302,30 @@ def match_levels(
         levels_new_qn_cols = qn_match_cols
 
     # Take an inner merge to only get the levels that do have matches.
-    levels_matched = levels_initial.merge(
-        levels_new,
+    states_matched = states_calc.merge(
+        states_obs,
         left_on=qn_match_cols,
         right_on=qn_match_cols,
         suffixes=suffixes,
         how="inner",
     )
-    print("LEVELS MATCHED: \n", levels_matched)
-    if len(levels_matched) == 0:
+    states_header.default_unc()
+    print("STATES MATCHED: \n", states_matched)
+    if len(states_matched) == 0:
         raise RuntimeWarning(
             "No matching levels found. New levels will be appended to existing set."
         )
         # TODO: Change to error, or add input fail_on_no_matches?
 
-    energy_calc_col = energy_col + suffixes[0]
-    energy_obs_col = energy_col + suffixes[1]
-    energy_dif_col = energy_col + "_dif"
+    energy_calc_col = states_header.energy + suffixes[0]
+    energy_obs_col = states_header.energy + suffixes[1]
+    energy_dif_col = states_header.energy + "_dif"
     energy_dif_mag_col = energy_dif_col + "_mag"
 
-    levels_matched[energy_dif_col] = levels_matched.apply(
+    states_matched[energy_dif_col] = states_matched.apply(
         lambda x: x[energy_obs_col] - x[energy_calc_col], axis=1
     )
-    levels_matched[energy_dif_mag_col] = levels_matched[energy_dif_col].apply(
-        lambda x: abs(x)
-    )
+    states_matched[energy_dif_mag_col] = states_matched[energy_dif_col].map(abs)
 
     # This was bad as it changed the structure of the output DataFrame to be that of the GroupBy frame.
     # levels_matched = levels_matched.sort_values(energy_dif_mag_col).groupby(by=qn_match_cols, as_index=False).first()
@@ -389,114 +340,292 @@ def match_levels(
         else qn_match_cols + [energy_obs_col]
     )
 
-    levels_matched_dup = levels_matched[
-        levels_matched.duplicated(subset=qn_dupe_cols, keep=False)
-    ].sort_values(qn_dupe_cols + [energy_dif_mag_col])
-
-    if len(levels_matched_dup) > 0:
-        # Get the index of the lowest energy_agreement entry, for each tag which has duplicates
-        levels_matched_dup_idx_min = (
-            levels_matched_dup.groupby(by=qn_dupe_cols, sort=False)[
-                energy_dif_mag_col
-            ].transform(min)
-            == levels_matched_dup[energy_dif_mag_col]
-        )
-        # Take the index of everything other than the lowest energy_agreement entry for each duplicated tag and remove
-        # it from the comparison dataframe
-        levels_matched = levels_matched.drop(
-            levels_matched_dup[~levels_matched_dup_idx_min].index
-        )
-
-    # TODO: TEST THIS ALTERNATIVE. Explicit ascending?
-    # levels_matched = levels_matched.sort_values(by=[qn_dupe_cols + [energy_dif_mag_col]]).drop_duplicates(
-    #     subset=qn_dupe_cols, keep='first')
+    # TODO: Include energy_obs in sort list as this will be the same for any duplicate levels_obs joined on?
+    print(states_matched[qn_dupe_cols + [energy_dif_mag_col]])
+    states_matched = states_matched.sort_values(
+        by=qn_dupe_cols + [energy_dif_mag_col]
+    ).drop_duplicates(subset=qn_dupe_cols, keep="first")
+    states_matched = states_matched.sort_values(by=states_header.state_id)
 
     # Remove the energy difference magnitude column as it is not needed beyond this point.
-    del levels_matched[energy_dif_mag_col]
+    del states_matched[energy_dif_mag_col]
 
-    # Check the 0 energy level.
+    # Check the 0 energy levels are the same.
     zero_energy_level_matches = len(
-        levels_matched.loc[
-            (levels_matched[energy_calc_col] == 0)
-            & (levels_matched[energy_obs_col] == 0)
+        states_matched.loc[
+            (states_matched[energy_calc_col] == 0)
+            & (states_matched[energy_obs_col] == 0)
         ]
     )
     if zero_energy_level_matches != 1:
         raise RuntimeError(
             "0 ENERGY LEVELS DO NOT MATCH ASSIGNMENTS IN BOTH DATASETS.\nORIGINAL:\n",
-            levels_matched.loc[levels_matched[energy_calc_col] == 0],
+            states_matched.loc[states_matched[energy_calc_col] == 0],
             "\nUPDATE:\n",
-            levels_matched.loc[levels_matched[energy_obs_col] == 0],
+            states_matched.loc[states_matched[energy_obs_col] == 0],
         )
 
     if not is_isotopologue_match:
         # Merge the sets of qn_match_cols in each DataFrame with an indicator to find any rows that are only in
         # levels_new to concat them to levels_matched.
-        levels_new_check_matched = levels_new[qn_match_cols].merge(
-            levels_matched[qn_match_cols], how="left", indicator=True
+        states_new_check_matched = states_obs[qn_match_cols].merge(
+            states_matched[qn_match_cols], how="left", indicator=True
         )
         # Get the indexes of levels_new where the unique qn_match_cols are not yet in levels_matched.
-        levels_new_to_concat_idx = levels_new_check_matched[
-            (levels_new_check_matched["_merge"] == "left_only")
+        states_new_to_concat_idx = states_new_check_matched[
+            (states_new_check_matched["_merge"] == "left_only")
         ].index
         # Isolate only the rows with those indexes to be concatenated.
-        levels_new_to_concat = levels_new[
-            levels_new.index.isin(levels_new_to_concat_idx)
+        states_new_to_concat = states_obs[
+            states_obs.index.isin(states_new_to_concat_idx)
         ]
         # Rename energy_col_name in the rows to be concatenated to energy_obs_col to avoid creating a new column.
-        levels_new_to_concat = levels_new_to_concat.rename(
-            columns={energy_col: energy_obs_col}
+        states_new_to_concat = states_new_to_concat.rename(
+            columns={states_header.energy: energy_obs_col}
         )
         if len(qn_cols_not_match) > 0:
-            levels_new_to_concat = levels_new_to_concat.rename(
+            states_new_to_concat = states_new_to_concat.rename(
                 columns={qn_col: qn_col + suffixes[1] for qn_col in qn_cols_not_match}
             )
-        # levels_matched = levels_matched.append(levels_new_to_append)
-        levels_matched = pd.concat([levels_matched, levels_new_to_concat])
+        states_matched = pd.concat([states_matched, states_new_to_concat])
 
-    levels_matched[source_tag_col] = match_source_tag.value
-    # TODO: Change to rename original column? Or worth keeping both?
-    levels_matched["energy_final"] = levels_matched[energy_obs_col]
+    if states_header.source_tag is None:
+        states_header.default_source_tag()
+    states_matched[states_header.source_tag] = match_source_tag.value
+    states_matched["energy_final"] = states_matched[energy_obs_col]
 
     # Rename original levels' energy to match the column name in levels_matched
-    levels_initial = levels_initial.rename(columns={energy_col: energy_calc_col})
+    states_calc = states_calc.rename(columns={states_header.energy: energy_calc_col})
     # Add missing original levels that are not in the final matching set
-    # levels_matched = levels_matched.append(levels_initial.loc[~levels_initial['id'].isin(levels_matched['id'])])
-    levels_initial_to_concat = levels_initial.loc[
-        ~levels_initial[id_col].isin(levels_matched[id_col])
+    states_calc_to_concat = states_calc.loc[
+        ~states_calc[states_header.state_id].isin(
+            states_matched[states_header.state_id]
+        )
     ]
     if len(qn_cols_not_match) > 0:
-        levels_initial_to_concat = levels_initial_to_concat.rename(
+        states_calc_to_concat = states_calc_to_concat.rename(
             columns={qn_col: qn_col + suffixes[0] for qn_col in qn_cols_not_match}
         )
 
     if (
-        unc_col in levels_initial_to_concat.columns
-        and unc_col + suffixes[0] in levels_matched.columns
+        states_header.unc in states_calc_to_concat.columns
+        and states_header.unc + suffixes[0] in states_matched.columns
     ):
-        levels_initial_to_concat = levels_initial_to_concat.rename(
-            columns={unc_col: unc_col + suffixes[0]}
+        states_calc_to_concat = states_calc_to_concat.rename(
+            columns={states_header.unc: states_header.unc + suffixes[0]}
         )
 
-    levels_matched = pd.concat([levels_matched, levels_initial_to_concat])
+    states_matched = pd.concat([states_matched, states_calc_to_concat])
 
     # Create table to provide energy shifts and std (for unc estimates) based on a qn grouping.
     # shift_table = generate_shift_table(states=levels_matched, shift_table_qn_cols=shift_table_qn_cols,
     #                                    energy_calc_col=energy_calc_col, energy_obs_col=energy_obs_col,
     #                                    energy_dif_col=energy_dif_col, unc_col=unc_col)
-    # print("SHIFT TABLE: \n", shift_table)
 
     if overwrite_non_match_qn_cols and len(qn_cols_not_match) > 0:
         for qn_col_not_match in qn_cols_not_match:
-            levels_matched[qn_col_not_match] = np.where(
-                levels_matched[qn_col_not_match + suffixes[1]].isna(),
-                levels_matched[qn_col_not_match + suffixes[0]],
-                levels_matched[qn_col_not_match + suffixes[1]],
+            states_matched[qn_col_not_match] = np.where(
+                states_matched[qn_col_not_match + suffixes[1]].isna(),
+                states_matched[qn_col_not_match + suffixes[0]],
+                states_matched[qn_col_not_match + suffixes[1]],
             )
-            del levels_matched[qn_col_not_match + suffixes[0]]
-            del levels_matched[qn_col_not_match + suffixes[1]]
+            del states_matched[qn_col_not_match + suffixes[0]]
+            del states_matched[qn_col_not_match + suffixes[1]]
 
-    return levels_matched
+    return states_matched
+
+
+# def match_levels(
+#     levels_initial: pd.DataFrame,
+#     levels_new: pd.DataFrame,
+#     qn_match_cols: t.List[str],
+#     match_source_tag: SourceTag,
+#     levels_new_qn_cols: t.List[str] = None,
+#     suffixes: t.Tuple[str, str] = None,
+#     energy_col: str = "energy",
+#     unc_col: str = "unc",
+#     source_tag_col: str = "source_tag",
+#     id_col: str = "ID",
+#     is_isotopologue_match: bool = False,
+#     overwrite_non_match_qn_cols: bool = False,
+# ) -> pd.DataFrame:
+#     """
+#     Does passing out the shift_table make things easier or is it too constraining for later processes to use the
+#     predefined grouping from the match quantum numbers? Allow subsequent methods to redo the grouping or is that just
+#     extra room for error/mistakes?
+#
+#     TODO: Double-check that the isotopologue match works as intended; create test cases.
+#
+#     Args:
+#         levels_initial:
+#         levels_new:
+#         qn_match_cols:
+#         match_source_tag:
+#         levels_new_qn_cols:
+#         suffixes:
+#         energy_col:
+#         unc_col:
+#         source_tag_col:
+#         id_col:
+#         is_isotopologue_match:
+#         overwrite_non_match_qn_cols:
+#
+#     Returns:
+#
+#     """
+#     if suffixes is None:
+#         suffixes = ("_calc", "_obs")
+#
+#     if levels_new_qn_cols is None:
+#         levels_new_qn_cols = qn_match_cols
+#
+#     # Take an inner merge to only get the levels that do have matches.
+#     levels_matched = levels_initial.merge(
+#         levels_new,
+#         left_on=qn_match_cols,
+#         right_on=qn_match_cols,
+#         suffixes=suffixes,
+#         how="inner",
+#     )
+#     print("LEVELS MATCHED: \n", levels_matched)
+#     if len(levels_matched) == 0:
+#         raise RuntimeWarning(
+#             "No matching levels found. New levels will be appended to existing set."
+#         )
+#         # TODO: Change to error, or add input fail_on_no_matches?
+#
+#     energy_calc_col = energy_col + suffixes[0]
+#     energy_obs_col = energy_col + suffixes[1]
+#     energy_dif_col = energy_col + "_dif"
+#     energy_dif_mag_col = energy_dif_col + "_mag"
+#
+#     levels_matched[energy_dif_col] = levels_matched.apply(
+#         lambda x: x[energy_obs_col] - x[energy_calc_col], axis=1
+#     )
+#     levels_matched[energy_dif_mag_col] = levels_matched[energy_dif_col].apply(
+#         lambda x: abs(x)
+#     )
+#
+#     # This was bad as it changed the structure of the output DataFrame to be that of the GroupBy frame.
+#     # levels_matched = levels_matched.sort_values(energy_dif_mag_col).groupby(by=qn_match_cols, as_index=False).first()
+#
+#     qn_cols_not_match = np.setdiff1d(levels_new_qn_cols, qn_match_cols)
+#     # If not matching on the full set of quantum numbers that uniquely determine a level, check for duplicates such that
+#     # no more than one level (defined by the input set of quantum numbers qn_match_cols) is matching on the same
+#     # levels_new level.
+#     qn_dupe_cols = (
+#         qn_match_cols
+#         if len(qn_cols_not_match) == 0
+#         else qn_match_cols + [energy_obs_col]
+#     )
+#
+#     levels_matched_dup = levels_matched[
+#         levels_matched.duplicated(subset=qn_dupe_cols, keep=False)
+#     ].sort_values(qn_dupe_cols + [energy_dif_mag_col])
+#
+#     if len(levels_matched_dup) > 0:
+#         # Get the index of the lowest energy_agreement entry, for each tag which has duplicates
+#         levels_matched_dup_idx_min = (
+#             levels_matched_dup.groupby(by=qn_dupe_cols, sort=False)[
+#                 energy_dif_mag_col
+#             ].transform(min)
+#             == levels_matched_dup[energy_dif_mag_col]
+#         )
+#         # Take the index of everything other than the lowest energy_agreement entry for each duplicated tag and remove
+#         # it from the comparison dataframe
+#         levels_matched = levels_matched.drop(
+#             levels_matched_dup[~levels_matched_dup_idx_min].index
+#         )
+#     # TODO: TEST THIS ALTERNATIVE. Explicit ascending?
+#     # levels_matched = levels_matched.sort_values(by=[qn_dupe_cols + [energy_dif_mag_col]]).drop_duplicates(
+#     #     subset=qn_dupe_cols, keep='first')
+#
+#     # Remove the energy difference magnitude column as it is not needed beyond this point.
+#     del levels_matched[energy_dif_mag_col]
+#
+#     # Check the 0 energy level.
+#     zero_energy_level_matches = len(
+#         levels_matched.loc[
+#             (levels_matched[energy_calc_col] == 0)
+#             & (levels_matched[energy_obs_col] == 0)
+#         ]
+#     )
+#     if zero_energy_level_matches != 1:
+#         raise RuntimeError(
+#             "0 ENERGY LEVELS DO NOT MATCH ASSIGNMENTS IN BOTH DATASETS.\nORIGINAL:\n",
+#             levels_matched.loc[levels_matched[energy_calc_col] == 0],
+#             "\nUPDATE:\n",
+#             levels_matched.loc[levels_matched[energy_obs_col] == 0],
+#         )
+#
+#     if not is_isotopologue_match:
+#         # Merge the sets of qn_match_cols in each DataFrame with an indicator to find any rows that are only in
+#         # levels_new to concat them to levels_matched.
+#         levels_new_check_matched = levels_new[qn_match_cols].merge(
+#             levels_matched[qn_match_cols], how="left", indicator=True
+#         )
+#         # Get the indexes of levels_new where the unique qn_match_cols are not yet in levels_matched.
+#         levels_new_to_concat_idx = levels_new_check_matched[
+#             (levels_new_check_matched["_merge"] == "left_only")
+#         ].index
+#         # Isolate only the rows with those indexes to be concatenated.
+#         levels_new_to_concat = levels_new[
+#             levels_new.index.isin(levels_new_to_concat_idx)
+#         ]
+#         # Rename energy_col_name in the rows to be concatenated to energy_obs_col to avoid creating a new column.
+#         levels_new_to_concat = levels_new_to_concat.rename(
+#             columns={energy_col: energy_obs_col}
+#         )
+#         if len(qn_cols_not_match) > 0:
+#             levels_new_to_concat = levels_new_to_concat.rename(
+#                 columns={qn_col: qn_col + suffixes[1] for qn_col in qn_cols_not_match}
+#             )
+#         # levels_matched = levels_matched.append(levels_new_to_append)
+#         levels_matched = pd.concat([levels_matched, levels_new_to_concat])
+#
+#     levels_matched[source_tag_col] = match_source_tag.value
+#     # TODO: Change to rename original column? Or worth keeping both?
+#     levels_matched["energy_final"] = levels_matched[energy_obs_col]
+#
+#     # Rename original levels' energy to match the column name in levels_matched
+#     levels_initial = levels_initial.rename(columns={energy_col: energy_calc_col})
+#     # Add missing original levels that are not in the final matching set
+#     # levels_matched = levels_matched.append(levels_initial.loc[~levels_initial['id'].isin(levels_matched['id'])])
+#     levels_initial_to_concat = levels_initial.loc[
+#         ~levels_initial[id_col].isin(levels_matched[id_col])
+#     ]
+#     if len(qn_cols_not_match) > 0:
+#         levels_initial_to_concat = levels_initial_to_concat.rename(
+#             columns={qn_col: qn_col + suffixes[0] for qn_col in qn_cols_not_match}
+#         )
+#
+#     if (
+#         unc_col in levels_initial_to_concat.columns
+#         and unc_col + suffixes[0] in levels_matched.columns
+#     ):
+#         levels_initial_to_concat = levels_initial_to_concat.rename(
+#             columns={unc_col: unc_col + suffixes[0]}
+#         )
+#
+#     levels_matched = pd.concat([levels_matched, levels_initial_to_concat])
+#
+#     # Create table to provide energy shifts and std (for unc estimates) based on a qn grouping.
+#     # shift_table = generate_shift_table(states=levels_matched, shift_table_qn_cols=shift_table_qn_cols,
+#     #                                    energy_calc_col=energy_calc_col, energy_obs_col=energy_obs_col,
+#     #                                    energy_dif_col=energy_dif_col, unc_col=unc_col)
+#     # print("SHIFT TABLE: \n", shift_table)
+#
+#     if overwrite_non_match_qn_cols and len(qn_cols_not_match) > 0:
+#         for qn_col_not_match in qn_cols_not_match:
+#             levels_matched[qn_col_not_match] = np.where(
+#                 levels_matched[qn_col_not_match + suffixes[1]].isna(),
+#                 levels_matched[qn_col_not_match + suffixes[0]],
+#                 levels_matched[qn_col_not_match + suffixes[1]],
+#             )
+#             del levels_matched[qn_col_not_match + suffixes[0]]
+#             del levels_matched[qn_col_not_match + suffixes[1]]
+#
+#     return levels_matched
 
 
 def generate_shift_table(
@@ -587,7 +716,7 @@ def set_predicted_unc(
 def generate_fit_groups(
     states: pd.DataFrame,
     fit_qn_list: t.List[str],
-    fit_x_col: str = "J",
+    fit_x_col: str,
     energy_calc_col: str = "energy_calc",
     energy_obs_col: str = "energy_obs",
     energy_dif_col: str = "energy_dif",
@@ -606,19 +735,18 @@ def generate_fit_groups(
 
 def predict_shifts(
     states_matched: pd.DataFrame,
+    states_header: ExoMolStatesHeader,
     fit_qn_list: t.List[str],
     j_segment_threshold_size: int = 14,
     show_plot: bool = False,
     energy_calc_col: str = "energy_calc",
     energy_obs_col: str = "energy_obs",
     energy_dif_col: str = "energy_dif",
-    unc_col: str = "unc",
-    j_col: str = "J",
-    source_tag_col: str = "source_tag",
     executor_type: ExecutorType = ExecutorType.THREADS,
     n_workers: int = 8,
 ) -> pd.DataFrame:
     """
+    TODO: WRITE THE REST OF THIS.
 
     The original, marvel and dif energy columns are intended to come from :func:`linelisttools.states.match_levels`,
     based on the name of the energy column and suffixes passed to that method. Defaults to the same default values if
@@ -628,9 +756,7 @@ def predict_shifts(
     Args:
         states_matched:           The matched Marvel/calculated states from which the obs.-calc. values to fit to are
             derived.
-        # shift_table:              The shift table derived from the matches states, providing mean obs.-calc. shifts for
-        #     the input states grouped by an arbitrary set of quantum numbers. Generally this grouping should be the same
-        #     as the quantum numbers provided in fit_qn_list.
+        states_header:            The ExoMolStatesHeader object containing the column mappings for the states file.
         fit_qn_list:              The list of arbitrary quantum numbers to group the obs.-calc. trends on for fitting.
             Generally should be the same as those used to generate the shift table. All quantum numbers must exist as
              columns within the shift_table and levels_matched DataFrames.
@@ -641,9 +767,6 @@ def predict_shifts(
         energy_calc_col:          The string column name for the calculated energy column in states_matched.
         energy_obs_col:           The string column name for the observed energy column in states_matched
         energy_dif_col:           The string column name for the energy difference column in states_matched
-        unc_col:                  The string column name for the uncertainty column in states_matched.
-        j_col:                    The string column name for the J column in states_matched.
-        source_tag_col:           The string column name for the source tag column in states_matched.
         executor_type:            Determines whether the fitting will be carried out with multiple threads or processes.
             Defaults to multithreading.
         n_workers:                The number of threads/processes to concurrently execute for the fitting.
@@ -671,16 +794,16 @@ def predict_shifts(
     #     )
 
     worker = functools.partial(
-        fit_predictions, j_segment_threshold_size, j_col, show_plot
+        fit_predictions, j_segment_threshold_size, states_header.rigorous_qn, show_plot
     )
     shift_groups = generate_fit_groups(
         states=states_matched,
         fit_qn_list=fit_qn_list,
-        fit_x_col=j_col,
+        fit_x_col=states_header.rigorous_qn,
         energy_calc_col=energy_calc_col,
         energy_obs_col=energy_obs_col,
         energy_dif_col=energy_dif_col,
-        unc_col=unc_col,
+        unc_col=states_header.unc,
     )
     with executor_type.value(max_workers=n_workers) as e:
         for result in tqdm.tqdm(
@@ -694,12 +817,13 @@ def predict_shifts(
     # Update energies with shift predictions:
     pe_fit_shifts = pd.DataFrame(
         data=shift_predictions,
-        columns=fit_qn_list + [j_col, "pe_fit_energy_shift", "pe_fit_unc"],
+        columns=fit_qn_list
+        + [states_header.rigorous_qn, "pe_fit_energy_shift", "pe_fit_unc"],
     )
     # pe_fit_shifts[fit_qn_list] = pe_fit_shifts["fit_qn"].str.split("|", len(fit_qn_list), expand=True)
     # del pe_fit_shifts["fit_qn"]
 
-    qn_merge_cols = fit_qn_list + [j_col]
+    qn_merge_cols = fit_qn_list + [states_header.rigorous_qn]
     states_matched = states_matched.merge(
         pe_fit_shifts, left_on=qn_merge_cols, right_on=qn_merge_cols, how="left"
     )
@@ -707,15 +831,15 @@ def predict_shifts(
         (states_matched["energy_final"].isna())
         & (~states_matched["pe_fit_energy_shift"].isna())
         & (~states_matched["energy_calc"].isna()),
-        source_tag_col,
+        states_header.source_tag,
     ] = SourceTag.PS_LINEAR_REGRESSION
-    states_matched[unc_col] = np.where(
-        states_matched[source_tag_col] == SourceTag.PS_LINEAR_REGRESSION,
+    states_matched[states_header.unc] = np.where(
+        states_matched[states_header.source_tag] == SourceTag.PS_LINEAR_REGRESSION,
         states_matched["pe_fit_unc"],
-        states_matched[unc_col],
+        states_matched[states_header.unc],
     )
     states_matched["energy_final"] = np.where(
-        states_matched[source_tag_col] == SourceTag.PS_LINEAR_REGRESSION,
+        states_matched[states_header.source_tag] == SourceTag.PS_LINEAR_REGRESSION,
         states_matched["energy_calc"] + states_matched["pe_fit_energy_shift"],
         states_matched["energy_final"],
     )
@@ -724,12 +848,12 @@ def predict_shifts(
     print(
         "PS_2: \n",
         states_matched.loc[
-            states_matched[source_tag_col] == SourceTag.PS_LINEAR_REGRESSION
+            states_matched[states_header.source_tag] == SourceTag.PS_LINEAR_REGRESSION
         ],
     )
 
     # Update energies with higher-J shift extrapolations:
-    j_max_col = j_col + "_max"
+    j_max_col = states_header.rigorous_qn + "_max"
     pe_extrapolate_shifts = pd.DataFrame(
         data=extrapolate_j_shifts,
         columns=fit_qn_list
@@ -749,8 +873,8 @@ def predict_shifts(
         (states_matched["energy_final"].isna())
         & (~states_matched[j_max_col].isna())
         & (~states_matched["energy_calc"].isna())
-        & (states_matched[j_col] > states_matched[j_max_col]),
-        source_tag_col,
+        & (states_matched[states_header.rigorous_qn] > states_matched[j_max_col]),
+        states_header.source_tag,
     ] = SourceTag.PS_EXTRAPOLATION
     # Scale unc based on j over j_max.
     # states_matched['unc'] = states_matched.apply(
@@ -758,20 +882,20 @@ def predict_shifts(
     #                                 j_max=x['j_max'], j_scale=0.05)
     #     if math.isnan(x['energy_final']) and not math.isnan(x['energy_calc']) and not math.isnan(x['j_max'])
     #        and x['j'] > x['j_max'] else x['unc'], axis=1)
-    states_matched[unc_col] = states_matched.apply(
+    states_matched[states_header.unc] = states_matched.apply(
         lambda x: set_predicted_unc(
             std=x["pe_extrapolate_energy_shift_std"],
             j_factor=0.0001,
             v_factor=0.05,
-            j_val=x[j_col],
+            j_val=x[states_header.rigorous_qn],
             j_max=x[j_max_col],
         )
-        if x[source_tag_col] == SourceTag.PS_EXTRAPOLATION
-        else x[unc_col],
+        if x[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION
+        else x[states_header.unc],
         axis=1,
     )
     states_matched["energy_final"] = np.where(
-        states_matched[source_tag_col] == SourceTag.PS_EXTRAPOLATION,
+        states_matched[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION,
         states_matched["energy_calc"] + states_matched["pe_extrapolate_energy_shift"],
         states_matched["energy_final"],
     )
@@ -781,7 +905,7 @@ def predict_shifts(
     print(
         "PS_3: \n",
         states_matched.loc[
-            states_matched[source_tag_col] == SourceTag.PS_EXTRAPOLATION
+            states_matched[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION
         ],
     )
 
@@ -1171,12 +1295,9 @@ def old_fit_predictions(
 
 def set_calc_states(
     states: pd.DataFrame,
+    states_header: ExoMolStatesHeader,
     unc_j_factor: float = 0.0001,
     unc_v_factor: float = 0.05,
-    source_tag_col: str = "source_tag",
-    unc_col: str = "unc",
-    j_col: str = "J",
-    v_col: str = "v",
     energy_final_col: str = "energy_final",
     energy_calc_col: str = "energy_calc",
 ) -> pd.DataFrame:
@@ -1188,12 +1309,9 @@ def set_calc_states(
     Args:
         states:           A DataFrame containing all states, those of which without a source_tag set will be updated to
             calculated.
+        states_header:    The ExoMolStatesHeader object containing the column mappings for the states file.
         unc_j_factor:     The uncertainty scale factor for the J term.
         unc_v_factor:     The uncertainty scale factor for the v term.
-        source_tag_col:   The string label for the source tag column in states.
-        unc_col:          The string label for the uncertainty column in states.
-        j_col:            The string label for the J column in states.
-        v_col:            The string label for the v column in states.
         energy_final_col: The string label for the final energy column in states.
         energy_calc_col:  The string label for the calculated energy column in states.
 
@@ -1217,20 +1335,25 @@ def set_calc_states(
     # agnostic to the order in which states are updated (i.e.: are predicted shifts determined before or after
     # calculated levels are set) but I feel it makes more sense to ensure this is done as the last step to catch the
     # remaining states left unchanged.
-    states[source_tag_col] = np.where(
-        states[source_tag_col].isna(),
+    states[states_header.source_tag] = np.where(
+        states[states_header.source_tag].isna(),
         SourceTag.CALCULATED,
-        states[source_tag_col],
+        states[states_header.source_tag],
     )
     states[energy_final_col] = np.where(
-        states[source_tag_col] == SourceTag.CALCULATED,
+        states[states_header.source_tag] == SourceTag.CALCULATED,
         states[energy_calc_col],
         states[energy_final_col],
     )
-    states[unc_col] = states.apply(
-        lambda x: estimate_uncertainty(x[j_col], x[v_col], unc_j_factor, unc_v_factor)
-        if x[source_tag_col] == SourceTag.CALCULATED
-        else x[unc_col],
+    states[states_header.unc] = states.apply(
+        lambda x: estimate_uncertainty(
+            x[states_header.rigorous_qn],
+            x[states_header.vibrational_qn],
+            unc_j_factor,
+            unc_v_factor,
+        )
+        if x[states_header.source_tag] == SourceTag.CALCULATED
+        else x[states_header.unc],
         axis=1,
     )
 
@@ -1239,14 +1362,12 @@ def set_calc_states(
 
 def shift_parity_pairs(
     states: pd.DataFrame,
+    states_header: ExoMolStatesHeader,
     shift_table_qn_cols: t.List[str],
     energy_calc_col: str = "energy_calc",
     energy_obs_col: str = "energy_obs",
     energy_dif_col: str = "energy_dif",
     energy_final_col: str = "energy_final",
-    unc_col: str = "unc",
-    source_tag_col: str = "source_tag",
-    id_col: str = "ID",
 ) -> pd.DataFrame:
     """
     Updates levels that have not had their source_tag set but have a level with equivalent quantum numbers in the Marvel
@@ -1257,11 +1378,9 @@ def shift_parity_pairs(
 
     Args:
         states:              A DataFrame containing the states to search for parity pairs in.
+        states_header:       The ExoMolStatesHeader object containing the column mappings for the states file.
         shift_table_qn_cols: The quantum number columns in states that should be grouped on to find the parity shift for
             each J; this list should not include "J".
-        source_tag_col:      The string label for the source tag column in states.
-        unc_col:             The string label for the uncertainty column in states.
-        id_col:              The string label for the ID column in states.
         energy_final_col:    The string label for the final energy column in states.
         energy_calc_col:     The string label for the calculated energy column in states.
         energy_obs_col:      The string label for the observed energy column in states.
@@ -1277,7 +1396,7 @@ def shift_parity_pairs(
         energy_calc_col=energy_calc_col,
         energy_obs_col=energy_obs_col,
         energy_dif_col=energy_dif_col,
-        unc_col=unc_col,
+        unc_col=states_header.unc,
     )
     # energy_dif_mean and energy_dif_unc are implicit column names of the shift table: other columns are the quantum
     # numbers it was grouped on.
@@ -1292,9 +1411,9 @@ def shift_parity_pairs(
     # Inner merge here gets us only the states that have matching quantum numbers to an entry in the shift table but has
     # not had its source_tag set, i.e.: those for which we have Marvel data for another level with the same quantum
     # numbers, excluding parity.
-    states_missing_parity_pairs = states.loc[states[source_tag_col].isna()].merge(
-        shift_table, on=shift_table_qn_cols, how="inner"
-    )
+    states_missing_parity_pairs = states.loc[
+        states[states_header.source_tag].isna()
+    ].merge(shift_table, on=shift_table_qn_cols, how="inner")
 
     # Apply shift table mean energy difference to calculated energy.
     states_missing_parity_pairs[energy_final_col] = states_missing_parity_pairs.apply(
@@ -1303,13 +1422,18 @@ def shift_parity_pairs(
 
     # Left merge parity pair shifts onto states to keep all states and give shift data where needed.
     states = states.merge(
-        states_missing_parity_pairs[[id_col, energy_final_col, energy_dif_unc_col]],
-        on=[id_col],
+        states_missing_parity_pairs[
+            [states_header.state_id, energy_final_col, energy_dif_unc_col]
+        ],
+        on=[states_header.state_id],
         how="left",
         suffixes=("", "_temp"),
     )
     states.loc[
-        states[id_col].isin(states_missing_parity_pairs[id_col]), source_tag_col
+        states[states_header.state_id].isin(
+            states_missing_parity_pairs[states_header.state_id]
+        ),
+        states_header.source_tag,
     ] = SourceTag.PS_PARITY_PAIR
     # Take the energy_final_temp from the merged DataFrame as energy_final where it exists, and the energy_dif_unc as
     # the unc for these rows.
@@ -1320,9 +1444,9 @@ def shift_parity_pairs(
         states[energy_final_col],
         states[energy_final_temp_col],
     )
-    states[unc_col] = np.where(
+    states[states_header.unc] = np.where(
         states[energy_final_temp_col].isna(),
-        states[unc_col],
+        states[states_header.unc],
         states[energy_dif_unc_col],
     )
     # Drop any temp columns, including the now useless (as it has been copied over into unc) energy_dif_unc column.
@@ -1331,5 +1455,5 @@ def shift_parity_pairs(
     )
     # states = states.drop(energy_dif_unc_col, axis=1)
     # Reorder on id for convenience.
-    states = states.sort_values(by=[id_col], ascending=True)
+    states = states.sort_values(by=[states_header.state_id], ascending=True)
     return states
