@@ -224,7 +224,7 @@ def read_mvl_energies(
 ) -> pd.DataFrame:
     if energy_cols is None:
         energy_cols = ["energy", "unc", "unc2", "degree"]
-        # TODO: Change this when Marvel4 is released; there should be no second unc column.
+        # TODO: Change this when Marvel4 is released; there should not be a second unc column.
     elif len(energy_cols) != 3:
         raise RuntimeError(
             "energy_cols argument must be  contain three values for the energy, uncertainty and degree columns."
@@ -290,16 +290,50 @@ def match_states(
     qn_match_cols: t.List[str],
     match_source_tag: SourceTag,
     states_header: ExoMolStatesHeader,
-    levels_new_qn_cols: t.List[str] = None,
+    states_new_qn_cols: t.List[str] = None,
     suffixes: t.Tuple[str, str] = None,
     is_isotopologue_match: bool = False,
     overwrite_non_match_qn_cols: bool = False,
 ) -> pd.DataFrame:
+    """
+    Matches a set of calculated and observational states, generally for the purpose of updating calculated states with
+    Marvelised energies. Matching states are determined by a input list of quantum numbers to match on, returning the
+    state with the smallest absolute obs.-calc. when there are duplicate matches. Duplicate matches should only occur
+    when the list of quantum numbers to match on is not the full set, such as in cases where the calculated states do
+    not contain a full quantum number assignment. In this case, the extra quantum numbers from the observational states
+    that were not matched on can be specified to be carried over to the output or used to overwrite their existing
+    values in the calculated states. The latter use case is particularly useful for adding assignments from Marvel
+    networks to calculated states files without full assignments, which is generally the case for triatomics and more
+    complicated molecules.
+
+    Isotpoologue matches can also be performed, whereby the obs.-calc. for the matching states of the primary species is
+    copied over to equivalently assigned states of the isotopologue species.
+    TODO: Double-check that the isotopologue match works as intended; create test cases.
+    Args:
+        states_calc:                 A DataFrame containing the calculated states file data.
+        states_obs:                  A DataFrame containing the observational/Marvel states.
+        qn_match_cols:               The list of quantum numbers to match the two sets of states on.
+        match_source_tag:            The source tag to set for the states that match between sets.
+        states_header:               The ExoMolStatesHeader object containing the column mappings for the calculated
+            states file
+        states_new_qn_cols:          A list of quantum number columns that may not be present in either of the states
+            files that are being matched that should be preserved in the output states.
+        suffixes:                    A tuple containing suffixes for any equivalently names states file columns that are
+            not matched on.
+        is_isotopologue_match:       A boolean determining whether the observed states are for an isotopologue of the
+            calculated states.
+        overwrite_non_match_qn_cols: A boolean determining whether any quantum number columns, which were not matched
+            on, should have their original calculated value overwritten by the values from the observational states.
+            Useful for overwriting placeholder NaN quantum numbers with values from observational assignments.
+
+    Returns:
+        A Dataframe representing the matched states file.
+    """
     if suffixes is None:
         suffixes = ("_calc", "_obs")
 
-    if levels_new_qn_cols is None:
-        levels_new_qn_cols = qn_match_cols
+    if states_new_qn_cols is None:
+        states_new_qn_cols = qn_match_cols
 
     # Take an inner merge to only get the levels that do have matches.
     states_matched = states_calc.merge(
@@ -330,7 +364,7 @@ def match_states(
     # This was bad as it changed the structure of the output DataFrame to be that of the GroupBy frame.
     # levels_matched = levels_matched.sort_values(energy_dif_mag_col).groupby(by=qn_match_cols, as_index=False).first()
 
-    qn_cols_not_match = np.setdiff1d(levels_new_qn_cols, qn_match_cols)
+    qn_cols_not_match = np.setdiff1d(states_new_qn_cols, qn_match_cols)
     # If not matching on the full set of quantum numbers that uniquely determine a level, check for duplicates such that
     # no more than one level (defined by the input set of quantum numbers qn_match_cols) is matching on the same
     # levels_new level.
@@ -453,8 +487,6 @@ def match_states(
 #     Does passing out the shift_table make things easier or is it too constraining for later processes to use the
 #     predefined grouping from the match quantum numbers? Allow subsequent methods to redo the grouping or is that just
 #     extra room for error/mistakes?
-#
-#     TODO: Double-check that the isotopologue match works as intended; create test cases.
 #
 #     Args:
 #         levels_initial:
