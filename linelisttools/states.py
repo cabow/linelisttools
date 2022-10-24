@@ -40,7 +40,8 @@ class ExoMolStatesHeader:
     _lifetime_default = "lifetime"
     _source_tag_default = "source_tag"
 
-    # TODO: Come up with a better solution than this.
+    # TODO: Come up with a better solution than this, because indexing these options out to pass into the constructor is
+    #  very janky.
     class StatesParity(Enum):
         TOTAL_PARITY = "parity_tot"
         ROTATIONLESS_PARITY = "parity_norot"

@@ -277,6 +277,55 @@ def deperturb_hyperfine(
         for result in tqdm.tqdm(e.map(worker, yield_grouped_data(transitions_grouped))):
             deperturbed_list.append(result)
 
-    # TODO: Create arg to determine if present/possible hf trans are kept?
+    # TODO: Create arg to determine if present/possible hf trans columns are kept?
 
     return pd.DataFrame(data=deperturbed_list, columns=output_cols)
+
+
+def shift_hyperfine(hfr_states: pd.DataFrame, hfu_states: pd.DataFrame) -> pd.DataFrame:
+    """
+    WIP
+
+    Takes in a set of calculated hyperfine-resolved states and empirical hyperfine-unresolved states. The calculated
+    hyperfine-resolved states are deperturbed and compared to the empirical hyperfine-unresolved states in order to
+    identify an obs.-calc. shift, which is then applied to the calculated hyperfine-resolved states such that their
+    deperturbed values would be consistent with observational data.
+
+    # TODO: Should all hyperfine components be shifted equally?
+    # TODO: How to include comparison to any empirical, hyperfine-resolved data?
+
+    Args:
+        hfr_states:
+        hfu_states:
+
+    Returns:
+
+    """
+    # Approaches that fail:
+    #
+    # Approach 1, does not seem good as ambiguity in whether shift arises from upper or lower level of trans.
+    # 1) Determine calculated transition frequencies from hyperfine-resolved calculated states that correspond to
+    # hyperfine-unresolved observed transitions.
+    # 2) Depertub these derived calculated frequencies.
+    # 3) Measure shift in each transitions.
+    # 4) Apply shift back to original set of hyperfine data.
+    #
+    # Approach 2
+    # 1) Determine calculated transition frequencies from hyperfine-resolved calculated states that correspond to
+    # hyperfine-unresolved observed transitions.
+    # 2) Calculate residual obs.-calc. between transitions.
+    # 3) Pass into minimiser, include a floated shift array that shifts each matching relevant hyperfine resolved level
+    # in the original such that it shifts all states that are relevant to determining matching transitions frequencies
+    # 4) Determine minimum when obs.-calc. residual between observed hyperfine-unresolved and calculated, deperturbed
+    # hyperfine is a minimum, finding optimal shift for each state.
+    # ISSUES: Many hundreds or more parameter problem, does not guarantee the hyperfine components of a level to be
+    # deperturbed are shifted together in a physical way/potential loss of physical splitting in hyperfine levels.
+
+    # DISCUSSION WITH JT:
+    # If hyperfine independent of v - copy splitting in v=0 to same assignment at higher v.
+    # For doublets where no hf splitting observed - have no hf splitting so all hf components of given level are on top
+    # of each other but set unc based on the resolution limit for experiments where hf splitting was not observed.
+    # Czech results may imply that hyperfine is v dependent.
+    # Cheaty way to do splittings: EH constants.
+
+    return hfr_states

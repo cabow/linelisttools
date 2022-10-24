@@ -360,18 +360,18 @@ def plot_states_by_source_tag(
         SourceTag.CALCULATED.value: "Calculated Energy Level",
         SourceTag.MARVELISED.value: "Marvelised Energy Level",
         SourceTag.EFFECTIVE_HAMILTONIAN.value: "Effective Hamiltonian",
-        SourceTag.PARITY_PAIR.value: "Predicted shift (parity pair)",
-        SourceTag.PREDICTED_SHIFT.value: "Predicted shift (linear regression)",
-        SourceTag.EXTRAPOLATED_SHIFT.value: "Predicted shift (extrapolation)",
+        SourceTag.PS_PARITY_PAIR.value: "Predicted shift (parity pair)",
+        SourceTag.PS_LINEAR_REGRESSION.value: "Predicted shift (linear regression)",
+        SourceTag.PS_EXTRAPOLATION.value: "Predicted shift (extrapolation)",
         SourceTag.PSEUDO_EXPERIMENTAL.value: "Pseudo-experimental correction",
     }
     source_tag_color_dict = {
         SourceTag.CALCULATED.value: "#EE7733",
         SourceTag.MARVELISED.value: "#EE3377",
         SourceTag.EFFECTIVE_HAMILTONIAN.value: "#009988",
-        SourceTag.PARITY_PAIR.value: "#33BBEE",
-        SourceTag.PREDICTED_SHIFT.value: "#FFCC11",  # EECC33 is maybe more in keeping with saturation/brightness.
-        SourceTag.EXTRAPOLATED_SHIFT.value: "#0077BB",
+        SourceTag.PS_PARITY_PAIR.value: "#33BBEE",
+        SourceTag.PS_LINEAR_REGRESSION.value: "#FFCC11",  # EECC33 is maybe more in keeping with saturation/brightness.
+        SourceTag.PS_EXTRAPOLATION.value: "#0077BB",
         SourceTag.PSEUDO_EXPERIMENTAL.value: "#CC3311",
     }
     # plot_colour_list = get_qualitative_colors(len(plot_source_list))

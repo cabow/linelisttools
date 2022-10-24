@@ -6,9 +6,8 @@ import pytest
 
 from linelisttools.concurrence import ExecutorType
 from linelisttools.format import SourceTag
-from linelisttools.states import (
+from linelisttools.states import (  # match_levels,
     ExoMolStatesHeader,
-    match_levels,
     match_states,
     predict_shifts,
     read_exomol_states,
@@ -159,7 +158,7 @@ def test_alo_states(
         qn_match_cols=qn_match_cols,
         match_source_tag=match_source_tag,
         states_header=states_header,
-        levels_new_qn_cols=levels_new_qn_cols,
+        states_new_qn_cols=levels_new_qn_cols,
         suffixes=suffixes,
         is_isotopologue_match=is_isotopologue_match,
         overwrite_non_match_qn_cols=overwrite_non_match_qn_cols,

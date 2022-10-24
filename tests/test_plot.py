@@ -76,8 +76,8 @@ def test_plot_state_coverage(
     diatomic_energies = read_mvl_energies(file=diatomic_energy_file, qn_cols=qn_cols)
     plot_state_coverage(
         energies=diatomic_energies,
-        state_list=["X_4Sigma-", "1_2Phi", "1_2Sigma+"],
-        # state_configuration_dict=state_configuration_dict,
+        # state_list=["X_4Sigma-", "1_2Phi", "1_2Sigma+"],
+        state_configuration_dict=state_configuration_dict,
         show=False,
         out_file=temp_plot_output,
         plot_type=PlotType.VIOLIN,
@@ -142,7 +142,7 @@ def test_plot_states_by_source_tag(
     states_parity_pairs_idxs = states_parity_pairs[id_col].unique()
     states.loc[
         states[id_col].isin(states_parity_pairs_idxs), source_tag_col
-    ] = SourceTag.PARITY_PAIR.value
+    ] = SourceTag.PS_PARITY_PAIR.value
 
     interp_bands_cols = ["state", "v", "Omega"]
     states_marvel_bands_max_j = (
@@ -167,7 +167,7 @@ def test_plot_states_by_source_tag(
     ].unique()
     states.loc[
         states[id_col].isin(df_states_extrap_idxs), source_tag_col
-    ] = SourceTag.EXTRAPOLATED_SHIFT.value
+    ] = SourceTag.PS_EXTRAPOLATION.value
     plot_states_by_source_tag(
         states=states,
         show=show,
