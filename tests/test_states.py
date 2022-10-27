@@ -96,6 +96,7 @@ def test_alo_states(
     print(levels_new)
 
     def temp_set_omega(state: str, fine_struct: str) -> float:
+        # This is a method specific to handling the AlO states and how they were done in MARVEL.
         series = state[0]
         if series in ["X", "B", "D", "F"]:
             # For AlO these series are all Sigma states.

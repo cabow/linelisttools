@@ -160,7 +160,7 @@ def test_plot_states_by_source_tag(
     ].unique()
     states.loc[
         states[id_col].isin(df_states_interp_idxs), source_tag_col
-    ] = SourceTag.PREDICTED_SHIFT.value
+    ] = SourceTag.PS_LINEAR_REGRESSION.value
 
     df_states_extrap_idxs = df_states_interp.loc[
         df_states_interp[j_col] >= df_states_interp[j_max_col], id_col

@@ -8,6 +8,7 @@ from linelisttools.hyperfine import (
     calc_num_possible_hf_trans,
     calc_possible_hf_trans,
     deperturb_hyperfine,
+    perturb_hyperfine,
 )
 
 
@@ -111,3 +112,17 @@ def test_deperturb_hyperfine_column_errors(df_transitions):
             qn_list=["state", "J", "F", "WRONG"],
             nuclear_spin=2,
         )
+
+
+def test_perturb_hyperfine(
+    states_hfr, states_hfu, qn_list, splitting_dependent_qn_list, nuclear_spin, f_col
+):
+    # Match the hyperfine MARVEL states with the Duo states, then use the shifts to perturb the nhf MARVEL states.
+    perturb_hyperfine(
+        states_hfr=states_hfr,
+        states_hfu=states_hfu,
+        qn_list=qn_list,
+        splitting_dependent_qn_list=splitting_dependent_qn_list,
+        nuclear_spin=nuclear_spin,
+        f_col=f_col,
+    )

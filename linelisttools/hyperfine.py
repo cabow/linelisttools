@@ -282,7 +282,14 @@ def deperturb_hyperfine(
     return pd.DataFrame(data=deperturbed_list, columns=output_cols)
 
 
-def shift_hyperfine(hfr_states: pd.DataFrame, hfu_states: pd.DataFrame) -> pd.DataFrame:
+def perturb_hyperfine(
+    states_hfr: pd.DataFrame,
+    states_hfu: pd.DataFrame,
+    qn_list: t.List[str],
+    splitting_dependent_qn_list: t.List[str],
+    nuclear_spin: float,
+    f_col: str = "F",
+) -> pd.DataFrame:
     """
     WIP
 
@@ -295,8 +302,12 @@ def shift_hyperfine(hfr_states: pd.DataFrame, hfu_states: pd.DataFrame) -> pd.Da
     # TODO: How to include comparison to any empirical, hyperfine-resolved data?
 
     Args:
-        hfr_states:
-        hfu_states:
+        states_hfr:
+        states_hfu:
+        qn_list:
+        splitting_dependent_qn_list:
+        nuclear_spin:
+        f_col:
 
     Returns:
 
@@ -306,8 +317,8 @@ def shift_hyperfine(hfr_states: pd.DataFrame, hfu_states: pd.DataFrame) -> pd.Da
     # Approach 1, does not seem good as ambiguity in whether shift arises from upper or lower level of trans.
     # 1) Determine calculated transition frequencies from hyperfine-resolved calculated states that correspond to
     # hyperfine-unresolved observed transitions.
-    # 2) Depertub these derived calculated frequencies.
-    # 3) Measure shift in each transitions.
+    # 2) Deperturb these derived calculated frequencies.
+    # 3) Measure shift in each transition.
     # 4) Apply shift back to original set of hyperfine data.
     #
     # Approach 2
@@ -325,7 +336,59 @@ def shift_hyperfine(hfr_states: pd.DataFrame, hfu_states: pd.DataFrame) -> pd.Da
     # If hyperfine independent of v - copy splitting in v=0 to same assignment at higher v.
     # For doublets where no hf splitting observed - have no hf splitting so all hf components of given level are on top
     # of each other but set unc based on the resolution limit for experiments where hf splitting was not observed.
-    # Czech results may imply that hyperfine is v dependent.
+    # Czech results may imply that hyperfine is v dependent. Doesn't seem to be!
     # Cheaty way to do splittings: EH constants.
 
-    return hfr_states
+    # 26/10: Assume input hfr levels are the full set of levels, where the obs MARVEL levels have been matched to the
+    # computed set. This means that splittings where we have MARVEL data will be "corrected", and we use computed
+    # splittings elsewhere.
+
+    # TODO: Make sure levels for which we have F and hf energy we use the hf energy and only do shifts for missing
+    #  levels.
+    # Step -1: Calculate all F values needed
+    j_hf_splitting = [
+        [j_val, calc_possible_f_values(nuclear_spin=nuclear_spin, j_value=j_val)]
+        for j_val in states_hfu["J"].unique()
+    ]
+    j_hf_splitting = [
+        [j_val, f_val] for j_val, f_list in j_hf_splitting for f_val in f_list
+    ]
+    j_hf_splitting = pd.DataFrame(j_hf_splitting, columns=["J", "F"])
+    states_hfu = states_hfu.merge(j_hf_splitting, on=["J"], how="inner")
+
+    # Step 0: Measure each F component shift from center.
+    splitting_dependent_hfu_qn_list = list(
+        set(splitting_dependent_qn_list) - set(f_col)
+    )
+    states_hrf_mean = states_hfr.groupby(
+        by=splitting_dependent_hfu_qn_list, as_index=False
+    ).agg({"energy": "mean"})
+    states_hrf_mean.columns = splitting_dependent_hfu_qn_list + ["energy_mean"]
+
+    # Step 1: Get splitting by state/fs/parity/J/F
+    states_hfr = states_hfr.merge(
+        states_hrf_mean, on=splitting_dependent_hfu_qn_list, how="inner"
+    )
+    states_hfr["splitting"] = states_hfr.apply(
+        lambda x: x["energy"] - x["energy_mean"], axis=1
+    )
+    # Take the mean of the splitting for a given hf qn set on the off chance we do have multiple v (or other splitting
+    # independent qn) for each instance of those qn.
+    states_hfr = states_hfr.groupby(by=splitting_dependent_qn_list, as_index=False).agg(
+        {"splitting": "mean"}
+    )
+
+    # Step 2: Determine which states to apply no splitting to (i.e.: Doublets)
+
+    # Step 3: Apply splitting to hfu states where equivalent exist in states_hfr
+    states_perturbed = states_hfu.merge(states_hfr, on=qn_list, how="left")
+    # Where there is no splitting merged from the hfr calculations, set the splitting to 0.
+    states_perturbed["splitting"] = states_perturbed["splitting"].fillna(0)
+    states_perturbed["energy_hfr"] = (
+        states_perturbed["energy"] + states_perturbed["splitting"]
+    )
+
+    # Step 4: Apply uncertainties; estimate based opn experimental resolution for states with no splitting where the
+    # size of hf splitting must be below experimental resolution.
+
+    return states_perturbed
