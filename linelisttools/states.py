@@ -277,6 +277,22 @@ def read_exomol_states(
     )
 
 
+def parity_norot_to_total(parity_norot: str, j_val: float) -> str:
+    parity_factor = 1 if parity_norot == "e" else -1 if parity_norot == "f" else None
+    j_exponent_factor = 0 if j_val.is_integer() else 0.5
+    j_term = (-1) ** (j_val - j_exponent_factor) * parity_factor
+    parity_tot = "+" if j_term == 1 else "-" if j_term == -1 else None
+    return parity_tot
+
+
+def parity_total_to_norot(parity_tot: str, j_val: float) -> str:
+    parity_factor = 1 if parity_tot == "+" else -1 if parity_tot == "-" else None
+    j_exponent_factor = 0 if j_val.is_integer() else 0.5
+    j_term = (-1) ** (j_val - j_exponent_factor) / parity_factor
+    parity_tot = "e" if j_term == 1 else "f" if j_term == -1 else None
+    return parity_tot
+
+
 def propagate_error_in_mean(unc_list: t.List[float]) -> float:
     unc_sq_list = [unc**2 for unc in unc_list]
     sum_unc_sq = sum(unc_sq_list)
@@ -375,7 +391,7 @@ def match_states(
         else qn_match_cols + [energy_obs_col]
     )
 
-    # TODO: Include energy_obs in sort list as this will be the same for any duplicate levels_obs joined on?
+    # TODO: Include energy_obs in sort list as this will be the same for any duplicate states_obs joined on?
     print(states_matched[qn_dupe_cols + [energy_dif_mag_col]])
     states_matched = states_matched.sort_values(
         by=qn_dupe_cols + [energy_dif_mag_col]
@@ -485,6 +501,8 @@ def match_states(
 #     overwrite_non_match_qn_cols: bool = False,
 # ) -> pd.DataFrame:
 #     """
+#     This is an old version of match_states that does not use the ExoMolStatesHeader class.
+#
 #     Does passing out the shift_table make things easier or is it too constraining for later processes to use the
 #     predefined grouping from the match quantum numbers? Allow subsequent methods to redo the grouping or is that just
 #     extra room for error/mistakes?
@@ -569,7 +587,6 @@ def match_states(
 #         levels_matched = levels_matched.drop(
 #             levels_matched_dup[~levels_matched_dup_idx_min].index
 #         )
-#     # TODO: TEST THIS ALTERNATIVE. Explicit ascending?
 #     # levels_matched = levels_matched.sort_values(by=[qn_dupe_cols + [energy_dif_mag_col]]).drop_duplicates(
 #     #     subset=qn_dupe_cols, keep='first')
 #

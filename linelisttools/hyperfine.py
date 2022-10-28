@@ -346,12 +346,17 @@ def perturb_hyperfine(
     # TODO: Make sure levels for which we have F and hf energy we use the hf energy and only do shifts for missing
     #  levels.
     # Step -1: Calculate all F values needed
+    # j_hf_splitting = [
+    #     [j_val, calc_possible_f_values(nuclear_spin=nuclear_spin, j_value=j_val)]
+    #     for j_val in states_hfu["J"].unique()
+    # ]
+    # j_hf_splitting = [
+    #     [j_val, f_val] for j_val, f_list in j_hf_splitting for f_val in f_list
+    # ]
     j_hf_splitting = [
-        [j_val, calc_possible_f_values(nuclear_spin=nuclear_spin, j_value=j_val)]
+        [j_val, f_val]
         for j_val in states_hfu["J"].unique()
-    ]
-    j_hf_splitting = [
-        [j_val, f_val] for j_val, f_list in j_hf_splitting for f_val in f_list
+        for f_val in calc_possible_f_values(nuclear_spin=nuclear_spin, j_value=j_val)
     ]
     j_hf_splitting = pd.DataFrame(j_hf_splitting, columns=["J", "F"])
     states_hfu = states_hfu.merge(j_hf_splitting, on=["J"], how="inner")
