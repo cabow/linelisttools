@@ -20,7 +20,7 @@ class SourceTag(Enum):
         return str(self.value)
 
     def format_output(self):
-        if self in [
+        if not pd.isna(self) and self in [
             self.PS_PARITY_PAIR,
             self.PS_LINEAR_REGRESSION,
             self.PS_EXTRAPOLATION,
@@ -36,14 +36,21 @@ class SourceTag(Enum):
 #  ID | Energy | g | J/F | unc? | lifetime? | parity_tot | parity_norot? | state/sym | sym_num? | ns_iso? | vib_qn+ |
 #  other_qn+ | source_tag.
 def output_data(
-    data: pd.DataFrame, filename: str, fortran_format_list: t.List, n_workers: int = 8
+    data: pd.DataFrame,
+    filename: str,
+    fortran_format_list: t.List[str],
+    n_workers: int = 8,
+    append: bool = False,
 ) -> None:
     if "source_tag" in data.columns:
         data["source_tag"] = data["source_tag"].map(SourceTag.format_output)
 
     worker = functools.partial(format_row, fortran_format_list)
-
-    with open(filename, "w+") as f, ThreadPoolExecutor(max_workers=n_workers) as e:
+    if append:
+        file_mode = "a"
+    else:
+        file_mode = "w+"
+    with open(filename, file_mode) as f, ThreadPoolExecutor(max_workers=n_workers) as e:
         for out_row in e.map(worker, data.itertuples(index=False)):
             f.write(out_row + "\n")
 

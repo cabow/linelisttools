@@ -6,8 +6,32 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
 import tqdm
+from sympy.physics.wigner import wigner_6j
 
 from .concurrence import yield_grouped_data
+from .format import create_tag
+
+__DEPERTURB_SCALE_FACTOR_DEFAULT = 15.0
+__HF_PRESENCE_SCALE_FACTOR_DEFAULT = 4.0
+__HF_SKEW_SCALE_FACTOR_DEFAULT = 4.0
+
+
+def calc_relative_intensity(
+    f_u: float,
+    f_l: float,
+    k: float,
+    j_l: float,
+    j_u: float,
+    nuclear_spin: float,
+    source: str,
+) -> float:
+    # try:
+    w6j = wigner_6j(f_u, f_l, k, j_l, j_u, nuclear_spin)
+    # except ValueError:
+    #     print(
+    #         f"Wigner 6j: arguments not integre/half-integer or do not satisfy triangle relation for {source}: {f_u, f_l,
+    #         k, j_l, j_u, nuclear_spin}.)
+    return ((2 * f_u) + 1) * ((2 * f_l) + 1) * w6j**2
 
 
 def calc_weighted_mean_energy(
@@ -108,7 +132,7 @@ def calc_hf_presence(
     hf_presence_scale_factor: float = None,
 ) -> float:
     if hf_presence_scale_factor is None:
-        hf_presence_scale_factor = 4.0
+        hf_presence_scale_factor = __HF_PRESENCE_SCALE_FACTOR_DEFAULT
     # When the number of trans in the data frame is equal to the number of possible transitions, the scale factor
     # returned is 1. When only 1 of the possible transitions is present (provided more than 1 are possible, the scale
     # factor is 10. This relationship is linear relative to the fraction of possible transitions available.
@@ -128,7 +152,7 @@ def calc_hf_skew(
     hf_skew_scale_factor: float = None,
 ) -> float:
     if hf_skew_scale_factor is None:
-        hf_skew_scale_factor = 4.0
+        hf_skew_scale_factor = __HF_SKEW_SCALE_FACTOR_DEFAULT
     present_f_pair_list = list(zip(f_u_list, f_l_list))
     present_delta_f_list = list(
         set([int(f_u - f_l) for f_u, f_l in present_f_pair_list])
@@ -212,30 +236,36 @@ def deperturb_hyperfine(
     j_col: str = "J",
     f_col: str = "F",
     source_col: str = "source",
-    intensity_col: str = "intensity",
+    intensity_col: str = "relative_intensity",
     suffixes: t.Tuple[str, str] = ("_u", "_l"),
     hf_presence_scale_factor: float = None,
     hf_skew_scale_factor: float = None,
+    deperturb_scale_factor: float = None,
     n_workers: int = 8,
 ) -> pd.DataFrame:
-    if (
-        len(
-            {energy_col, unc_col, source_col, intensity_col}.difference(
-                transitions.columns
-            )
-        )
-        > 0
-    ):
+    if len({energy_col, unc_col, source_col}.difference(transitions.columns)) > 0:
         raise RuntimeError(
             "The following columns were not found in the transition DataFrame: ",
-            {energy_col, unc_col, source_col, intensity_col}.difference(
-                transitions.columns
-            ),
+            {energy_col, unc_col, source_col}.difference(transitions.columns),
         )
 
     if f_col in qn_list:
         qn_list.remove(f_col)
-    transitions["source"] = transitions["source"].map(lambda x: x.split(".")[0])
+
+    transitions[intensity_col] = transitions.apply(
+        lambda x: calc_relative_intensity(
+            x[f_col + suffixes[0]],
+            x[f_col + suffixes[1]],
+            1,
+            x[j_col + suffixes[1]],
+            x[j_col + suffixes[0]],
+            nuclear_spin,
+            x[source_col],
+        ),
+        axis=1,
+    )
+    transitions[source_col] = transitions[source_col].map(lambda x: x.split(".")[0])
+    transitions = transitions.drop_duplicates(keep="first")
 
     group_by_cols = [qn + state_label for state_label in suffixes for qn in qn_list] + [
         source_col
@@ -277,9 +307,30 @@ def deperturb_hyperfine(
         for result in tqdm.tqdm(e.map(worker, yield_grouped_data(transitions_grouped))):
             deperturbed_list.append(result)
 
-    # TODO: Create arg to determine if present/possible hf trans columns are kept?
+    deperturbed_data = pd.DataFrame(data=deperturbed_list, columns=output_cols)
+    if deperturb_scale_factor is None:
+        deperturb_scale_factor = __DEPERTURB_SCALE_FACTOR_DEFAULT
+    deperturbed_data[unc_col] = (
+        deperturbed_data[unc_col + "_wm"]
+        * deperturbed_data["hfs_presence"]
+        * deperturbed_data["hfs_skew"]
+        * deperturb_scale_factor
+    )
+    # Remove any energies with nan results, i.e.: |DeltaJ| > 1 transitions that cannot have intensities approximated
+    # through this method.
+    deperturbed_data = deperturbed_data.loc[
+        ~deperturbed_data[energy_col + "_wm"].isna()
+    ]
 
-    return pd.DataFrame(data=deperturbed_list, columns=output_cols)
+    for source in deperturbed_data[source_col].unique():
+        source_count = len(deperturbed_data.loc[deperturbed_data[source_col] == source])
+        tag_length = int(math.log10(source_count)) + 1
+        deperturbed_data.loc[deperturbed_data[source_col] == source, source_col] = [
+            create_tag(source, tag_num, tag_length)
+            for tag_num in np.arange(1, source_count + 1)
+        ]
+
+    return deperturbed_data
 
 
 def perturb_hyperfine(
@@ -343,8 +394,11 @@ def perturb_hyperfine(
     # computed set. This means that splittings where we have MARVEL data will be "corrected", and we use computed
     # splittings elsewhere.
 
-    # TODO: Make sure levels for which we have F and hf energy we use the hf energy and only do shifts for missing
-    #  levels.
+    # TODO: 01/11: Potentially add C and B to model; splitting likely smaller than X.
+    #  Fix X state vibrational band origins.
+    #  Add other states to Duo with no hyperfine; fix T_0 where known better.
+    #  Then add marvel on top, prioritising hf marvel then take hfu where absent.
+
     # Step -1: Calculate all F values needed
     # j_hf_splitting = [
     #     [j_val, calc_possible_f_values(nuclear_spin=nuclear_spin, j_value=j_val)]

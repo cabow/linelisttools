@@ -220,20 +220,6 @@ class ExoMolStatesHeader:
         self._source_tag = self._source_tag_default
 
 
-def read_mvl_energies(
-    file: str, qn_cols: t.List[str], energy_cols: t.List[str] = None
-) -> pd.DataFrame:
-    if energy_cols is None:
-        energy_cols = ["energy", "unc", "unc2", "degree"]
-        # TODO: Change this when Marvel4 is released; there should not be a second unc column.
-    elif len(energy_cols) != 3:
-        raise RuntimeError(
-            "energy_cols argument must be  contain three values for the energy, uncertainty and degree columns."
-        )
-    mvl_energy_cols = qn_cols + energy_cols
-    return pd.read_csv(file, delim_whitespace=True, names=mvl_energy_cols)
-
-
 def read_states_file(
     file: str,
     states_cols: t.List[str],
@@ -279,6 +265,8 @@ def read_exomol_states(
 
 def parity_norot_to_total(parity_norot: str, j_val: float) -> str:
     parity_factor = 1 if parity_norot == "e" else -1 if parity_norot == "f" else None
+    if parity_factor is None:
+        raise ValueError(f"Input rotationless parity was not e or f: {parity_norot}")
     j_exponent_factor = 0 if j_val.is_integer() else 0.5
     j_term = (-1) ** (j_val - j_exponent_factor) * parity_factor
     parity_tot = "+" if j_term == 1 else "-" if j_term == -1 else None
@@ -287,6 +275,8 @@ def parity_norot_to_total(parity_norot: str, j_val: float) -> str:
 
 def parity_total_to_norot(parity_tot: str, j_val: float) -> str:
     parity_factor = 1 if parity_tot == "+" else -1 if parity_tot == "-" else None
+    if parity_factor is None:
+        raise ValueError(f"Input total parity was not + or -: {parity_tot}")
     j_exponent_factor = 0 if j_val.is_integer() else 0.5
     j_term = (-1) ** (j_val - j_exponent_factor) / parity_factor
     parity_tot = "e" if j_term == 1 else "f" if j_term == -1 else None
@@ -301,6 +291,11 @@ def propagate_error_in_mean(unc_list: t.List[float]) -> float:
     return error
 
 
+# TODO: There is an edge case when doing a minimal quantum number, closest-energy match where in theory two levels with
+#  the same rigorous quantum numbers could match with the same calculated level. Switch the simple dropduplicates()
+#  back to the old method of finding the duplicated idxs and ordering them, then perform a rank and compare whereby if
+#  two levels A, B match calculated x, y and both are closest to x such that A-x=1, B-x=-2, A-y=10, B-y=7 then though
+#  both are closest to x, A is closer so A will match with x and B will then defer to its second match and match with y.
 def match_states(
     states_calc: pd.DataFrame,
     states_obs: pd.DataFrame,
@@ -311,6 +306,7 @@ def match_states(
     suffixes: t.Tuple[str, str] = None,
     is_isotopologue_match: bool = False,
     overwrite_non_match_qn_cols: bool = False,
+    check_zero_energies: bool = True,
 ) -> pd.DataFrame:
     """
     Matches a set of calculated and observational states, generally for the purpose of updating calculated states with
@@ -402,19 +398,19 @@ def match_states(
     del states_matched[energy_dif_mag_col]
 
     # Check the 0 energy levels are the same.
-    zero_energy_level_matches = len(
-        states_matched.loc[
-            (states_matched[energy_calc_col] == 0)
-            & (states_matched[energy_obs_col] == 0)
-        ]
-    )
-    if zero_energy_level_matches != 1:
-        raise RuntimeError(
-            "0 ENERGY LEVELS DO NOT MATCH ASSIGNMENTS IN BOTH DATASETS.\nORIGINAL:\n",
-            states_matched.loc[states_matched[energy_calc_col] == 0],
-            "\nUPDATE:\n",
-            states_matched.loc[states_matched[energy_obs_col] == 0],
+    if check_zero_energies:
+        zero_energy_level_matches = len(
+            states_matched.loc[
+                (states_matched[energy_calc_col] == 0)
+                & (states_matched[energy_obs_col] == 0)
+            ]
         )
+        if zero_energy_level_matches != 1:
+            raise RuntimeError(
+                f"0 ENERGY LEVELS DO NOT MATCH ASSIGNMENTS IN BOTH DATASETS.\n"
+                f"ORIGINAL: {states_matched.loc[states_matched[energy_calc_col] == 0]}\n"
+                f"UPDATE: {states_matched.loc[states_matched[energy_obs_col] == 0]}\n"
+            )
 
     if not is_isotopologue_match:
         # Merge the sets of qn_match_cols in each DataFrame with an indicator to find any rows that are only in
@@ -442,7 +438,7 @@ def match_states(
 
     if states_header.source_tag is None:
         states_header.default_source_tag()
-    states_matched[states_header.source_tag] = match_source_tag.value
+    states_matched[states_header.source_tag] = match_source_tag
     states_matched["energy_final"] = states_matched[energy_obs_col]
 
     # Rename original levels' energy to match the column name in levels_matched

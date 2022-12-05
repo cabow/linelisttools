@@ -233,3 +233,6 @@ def test_exomolstatesheader_formatting():
     )
     header_out = header.get_header()
     print(header_out)
+
+
+# TODO: Add parity_total_to_norot and parity_norot_to_total tests.

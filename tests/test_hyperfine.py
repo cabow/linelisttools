@@ -137,145 +137,158 @@ def vo_4hfs_duo_states_file():
     return (Path(__file__).parent / r"./inputs/VO_hfs.states").resolve()
 
 
-@pytest.mark.parametrize(
-    "qn_list,splitting_dependent_qn_list,nuclear_spin,f_col",
-    [
-        (
-            ["state", "omega", "parity_tot", "v", "J", "F"],
-            ["state", "omega", "parity_tot", "J", "F"],
-            3.5,
-            "F",
-        )
-    ],
-)
-def test_perturb_hyperfine(
-    vo_4hfs_marvel_energies_file,
-    vo_4hfs_duo_states_file,
-    # states_hfu,
-    qn_list,
-    splitting_dependent_qn_list,
-    nuclear_spin,
-    f_col,
-):
-    states_hfr_mvl = read_mvl_energies(
-        file=vo_4hfs_marvel_energies_file,
-        qn_cols=["state", "fs", "omega", "parity_norot", "v", "J", "F"],
-        energy_cols=["energy", "unc", "degree"],
-    )
-    states_hfr_mvl["parity_tot"] = states_hfr_mvl.apply(
-        lambda x: parity_norot_to_total(parity_norot=x["parity_norot"], j_val=x["J"]),
-        axis=1,
-    )
-    print(states_hfr_mvl)
-    states_hfr_duo = pd.read_csv(
-        vo_4hfs_duo_states_file,
-        delim_whitespace=True,
-        names=[
-            "id",
-            "energy",
-            "g",
-            "F",
-            "I",
-            "parity_tot",
-            "J",
-            "state",
-            "v",
-            "lambda",
-            "sigma",
-            "omega",
-        ],
-    )
-    states_hfr_duo["energy"] = states_hfr_duo["energy"] - states_hfr_duo["energy"].min()
-    states_hfr_duo["state"] = states_hfr_duo["state"].map(
-        lambda x: str.replace(x, ",", "_")
-    )
-    states_hfr_duo["omega"] = states_hfr_duo.apply(
-        lambda x: abs(x["omega"]) if x["state"] == "X_4Sigma-" else x["omega"], axis=1
-    )
-    states_hfr_duo = states_hfr_duo[
-        [
-            "id",
-            "energy",
-            "g",
-            "F",
-            "parity_tot",
-            "state",
-            "v",
-            "J",
-            "lambda",
-            "sigma",
-            "omega",
-        ]
-    ]
-    statesheader_hfr_duo = ExoMolStatesHeader(
-        degeneracy="g",
-        rigorous_qn="F",
-        unc=None,
-        parity=ExoMolStatesHeader.StatesParity.TOTAL_PARITY,
-        symmetry="state",
-        vibrational_qn="v",
-        other_qn=["J", "lambda", "sigma", "omega"],
-    )
-    states_hfr_match = match_states(
-        states_calc=states_hfr_duo,
-        states_obs=states_hfr_mvl,
-        qn_match_cols=qn_list,
-        match_source_tag=SourceTag.MARVELISED,
-        states_header=statesheader_hfr_duo,
-    )
-    states_hfr_match_mvl = states_hfr_match.loc[
-        states_hfr_match["source_tag"] == SourceTag.MARVELISED.value
-    ]
-    print(states_hfr_match_mvl)
-    pio.renderers.default = "browser"
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=states_hfr_match_mvl["J"],
-            y=states_hfr_match_mvl["energy_obs"],
-            customdata=states_hfr_match_mvl["state"],
-            marker=dict(
-                color="#33BBEE",
-                line=dict(color="#33BBEE", width=3),
-                symbol="cross-thin",
-                size=20,
-            ),
-            mode="markers",
-            hovertemplate="<i>J:</i>%{x}<br><i>Energy (obs):</i>%{y}<br><i>State:</i>%{customdata}",
-            showlegend=True,
-            name="MARVEL",
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=states_hfr_match_mvl["J"],
-            y=states_hfr_match_mvl["energy_calc"],
-            customdata=states_hfr_match_mvl["state"],
-            marker=dict(
-                color="#CC3311",
-                line=dict(color="#CC3311", width=3),
-                symbol="x-thin",
-                size=20,
-            ),
-            mode="markers",
-            hovertemplate="<i>J:</i>%{x}<br><i>Energy (calc):</i>%{y}<br><i>State:</i>%{customdata}",
-            showlegend=True,
-            name="Duo",
-        )
-    )
-    fig.update_layout(
-        xaxis=go.layout.XAxis(title="J"),
-        yaxis=go.layout.YAxis(title="Energy (cm<sup>-1</sup>)", showticklabels=False),
-    )
-    fig.show()
-
-    # Match the hyperfine MARVEL states with the Duo states, then use the shifts to perturb the nhf MARVEL states.
-    # TODO: What hfu states to use?
-    # perturb_hyperfine(
-    #     states_hfr=states_hfr_match,
-    #     states_hfu=states_hfu,
-    #     qn_list=qn_list,
-    #     splitting_dependent_qn_list=splitting_dependent_qn_list,
-    #     nuclear_spin=nuclear_spin,
-    #     f_col=f_col,
-    # )
+# @pytest.mark.parametrize(
+#     "qn_list,splitting_dependent_qn_list,nuclear_spin,f_col",
+#     [
+#         (
+#             ["state", "omega", "parity_tot", "v", "J", "F"],
+#             ["state", "omega", "parity_tot", "J", "F"],
+#             3.5,
+#             "F",
+#         )
+#     ],
+# )
+# def test_perturb_hyperfine(
+#     vo_4hfs_marvel_energies_file,
+#     vo_4hfs_duo_states_file,
+#     # states_hfu,
+#     qn_list,
+#     splitting_dependent_qn_list,
+#     nuclear_spin,
+#     f_col,
+# ):
+#     pd.set_option('display.max_columns', None)
+#     states_hfr_mvl = read_mvl_energies(
+#         file=vo_4hfs_marvel_energies_file,
+#         qn_cols=["state", "fs", "omega", "parity_norot", "v", "J", "F"],
+#         energy_cols=["energy", "unc", "degree"],
+#     )
+#     states_hfr_mvl["parity_tot"] = states_hfr_mvl.apply(
+#         lambda x: parity_norot_to_total(parity_norot=x["parity_norot"], j_val=x["J"]),
+#         axis=1,
+#     )
+#     print(states_hfr_mvl)
+#     states_hfr_duo = pd.read_csv(
+#         vo_4hfs_duo_states_file,
+#         delim_whitespace=True,
+#         names=[
+#             "id",
+#             "energy",
+#             "g",
+#             "F",
+#             "I",
+#             "parity_tot",
+#             "J",
+#             "state",
+#             "v",
+#             "lambda",
+#             "sigma",
+#             "omega",
+#         ],
+#     )
+#     states_hfr_duo["energy"] = states_hfr_duo["energy"] - states_hfr_duo["energy"].min()
+#     states_hfr_duo["state"] = states_hfr_duo["state"].map(
+#         lambda x: str.replace(x, ",", "_")
+#     )
+#     states_hfr_duo["omega"] = states_hfr_duo.apply(
+#         lambda x: abs(x["omega"]) if x["state"] in ["X_4Sigma-", "1_2Sigma+"] else x["omega"], axis=1
+#     )
+#     print(states_hfr_duo.loc[states_hfr_duo["state"] == "1_2Sigma+"])
+#     states_hfr_duo = states_hfr_duo[
+#         [
+#             "id",
+#             "energy",
+#             "g",
+#             "F",
+#             "parity_tot",
+#             "state",
+#             "v",
+#             "J",
+#             "lambda",
+#             "sigma",
+#             "omega",
+#         ]
+#     ]
+#     statesheader_hfr_duo = ExoMolStatesHeader(
+#         degeneracy="g",
+#         rigorous_qn="F",
+#         unc=None,
+#         parity=ExoMolStatesHeader.StatesParity.TOTAL_PARITY,
+#         symmetry="state",
+#         vibrational_qn="v",
+#         other_qn=["J", "lambda", "sigma", "omega"],
+#     )
+#     states_hfr_match = match_states(
+#         states_calc=states_hfr_duo,
+#         states_obs=states_hfr_mvl,
+#         qn_match_cols=qn_list,
+#         match_source_tag=SourceTag.MARVELISED,
+#         states_header=statesheader_hfr_duo,
+#     )
+#     print(states_hfr_match.loc[states_hfr_match["state"] == "1_2Sigma+"])
+#     states_hfr_match_mvl = states_hfr_match.loc[
+#         states_hfr_match["source_tag"] == SourceTag.MARVELISED.value
+#     ]
+#     print(states_hfr_match_mvl)
+#     pio.renderers.default = "browser"
+#     fig = go.Figure()
+#     fig.add_trace(
+#         go.Scatter(
+#             x=states_hfr_match_mvl["J"],
+#             y=states_hfr_match_mvl["energy_obs"],
+#             customdata=states_hfr_match_mvl["state"],
+#             marker=dict(
+#                 color="#33BBEE",
+#                 line=dict(color="#33BBEE", width=3),
+#                 symbol="cross-thin",
+#                 size=20,
+#             ),
+#             mode="markers",
+#             hovertemplate="<i>J:</i>%{x}<br><i>Energy (obs):</i>%{y}<br><i>State:</i>%{customdata}",
+#             showlegend=True,
+#             name="MARVEL",
+#         )
+#     )
+#     fig.add_trace(
+#         go.Scatter(
+#             x=states_hfr_match_mvl["J"],
+#             y=states_hfr_match_mvl["energy_calc"],
+#             customdata=states_hfr_match_mvl["state"],
+#             marker=dict(
+#                 color="#CC3311",
+#                 line=dict(color="#CC3311", width=3),
+#                 symbol="x-thin",
+#                 size=20,
+#             ),
+#             mode="markers",
+#             hovertemplate="<i>J:</i>%{x}<br><i>Energy (calc):</i>%{y}<br><i>State:</i>%{customdata}",
+#             showlegend=True,
+#             name="Duo",
+#         )
+#     )
+#     fig.update_layout(
+#         xaxis=go.layout.XAxis(title="J"),
+#         yaxis=go.layout.YAxis(title="Energy (cm<sup>-1</sup>)", showticklabels=False),
+#     )
+#     fig.show()
+#
+#     statesheader_hfu = ExoMolStatesHeader(
+#         degeneracy="g",
+#         unc=None,
+#         parity=ExoMolStatesHeader.StatesParity.TOTAL_PARITY,
+#         symmetry="state",
+#         vibrational_qn="v",
+#         other_qn=["lambda", "sigma", "omega"],
+#     )
+#     # states_hfu = read_exomol_states(file=..., exomol_states_header=statesheader_hfu)
+#
+#     # Match the hyperfine MARVEL states with the Duo states, then use the shifts to perturb the nhf MARVEL states.
+#     # TODO: What hfu states to use: VOMYT; VOMYT+MARVEL?
+#     # perturb_hyperfine(
+#     #     states_hfr=states_hfr_match,
+#     #     states_hfu=states_hfu,
+#     #     qn_list=qn_list,
+#     #     splitting_dependent_qn_list=splitting_dependent_qn_list,
+#     #     nuclear_spin=nuclear_spin,
+#     #     f_col=f_col,
+#     # )
