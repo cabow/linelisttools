@@ -338,6 +338,9 @@ def match_states(
         overwrite_non_match_qn_cols: A boolean determining whether any quantum number columns, which were not matched
             on, should have their original calculated value overwritten by the values from the observational states.
             Useful for overwriting placeholder NaN quantum numbers with values from observational assignments.
+        check_zero_energies:         A boolean determining whether a comparison is made to check whether the zero-energy
+            state of the matching states are the same. Defaults to True; set to false when matching a subset of states
+            that do not start at zero.
 
     Returns:
         A Dataframe representing the matched states file.

@@ -14,12 +14,12 @@ from linelisttools.hyperfine import (
     deperturb_hyperfine,
     perturb_hyperfine,
 )
+from linelisttools.marvel import read_marvel_energies
 from linelisttools.states import (
     ExoMolStatesHeader,
     match_states,
     parity_norot_to_total,
     read_exomol_states,
-    read_mvl_energies,
 )
 
 

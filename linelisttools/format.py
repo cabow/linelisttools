@@ -2,6 +2,7 @@ import functools
 import typing as t
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
+from pathlib import Path
 
 import pandas as pd
 
@@ -37,7 +38,7 @@ class SourceTag(Enum):
 #  other_qn+ | source_tag.
 def output_data(
     data: pd.DataFrame,
-    filename: str,
+    filename: t.Union[str, Path],
     fortran_format_list: t.List[str],
     n_workers: int = 8,
     append: bool = False,
