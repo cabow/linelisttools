@@ -51,7 +51,9 @@ def output_data(
         file_mode = "a"
     else:
         file_mode = "w+"
-    with open(filename, file_mode) as f, ThreadPoolExecutor(max_workers=n_workers) as e:
+    with open(filename, file_mode, newline="\n") as f, ThreadPoolExecutor(
+        max_workers=n_workers
+    ) as e:
         for out_row in e.map(worker, data.itertuples(index=False)):
             f.write(out_row + "\n")
 
