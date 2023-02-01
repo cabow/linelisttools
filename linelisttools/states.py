@@ -296,6 +296,9 @@ def propagate_error_in_mean(unc_list: t.List[float]) -> float:
 #  back to the old method of finding the duplicated idxs and ordering them, then perform a rank and compare whereby if
 #  two levels A, B match calculated x, y and both are closest to x such that A-x=1, B-x=-2, A-y=10, B-y=7 then though
 #  both are closest to x, A is closer so A will match with x and B will then defer to its second match and match with y.
+#  Answer: assign each match a ranking based on closeness, with 1 being the closest. Check if any mvl energies have the
+#  same ID calculated energy as their rank 1 match, then apply a next-closest approach to determine which gets the
+#  closest match.
 def match_states(
     states_calc: pd.DataFrame,
     states_obs: pd.DataFrame,
