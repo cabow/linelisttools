@@ -6,12 +6,12 @@ import pytest
 
 from linelisttools.concurrence import ExecutorType
 from linelisttools.format import SourceTag
+from linelisttools.marvel import read_marvel_energies
 from linelisttools.states import (  # match_levels,
     ExoMolStatesHeader,
     match_states,
     predict_shifts,
     read_exomol_states,
-    read_mvl_energies,
     set_calc_states,
     shift_parity_pairs,
 )
@@ -88,10 +88,9 @@ def test_alo_states(
     j_segment_threshold_size,
 ):
     pd.set_option("display.max_columns", None)
-    levels_new = read_mvl_energies(
+    levels_new = read_marvel_energies(
         alo_marvel_energies_file,
         marvel_qn_cols,
-        energy_cols=["energy", "unc", "degree"],
     )
     print(levels_new)
 

@@ -89,43 +89,43 @@ def test_plot_state_coverage(
     )
 
 
-@pytest.mark.parametrize(
-    "georgi_marvel_energy_file,qn_list,state_list,outfile",
-    [
-        (
-            r"\path\to\georgi's\marvel\energies.txt",  # Update this!
-            [
-                "state",
-                "fs",
-                "Omega",
-                "parity",
-                "v",
-                "J",
-            ],  # The quantum numbers in your marvel energies
-            [
-                "X_4Sigma-",
-                "A_4Pi",
-            ],  # List the states in your molecule you want to plot in left-to-right order
-            r"\path\to\where\to\save\plot.png",  # Update this!
-        )
-    ],
-)
-def test_georgi(
-    georgi_marvel_energy_file,
-    qn_list,
-    state_list,
-    outfile,
-):
-    diatomic_energies = read_marvel_energies(
-        marvel_energy_file=georgi_marvel_energy_file, qn_list=qn_list
-    )
-    plot_state_coverage(
-        energies=diatomic_energies,
-        state_list=state_list,
-        show=False,
-        out_file=outfile,
-        plot_type=PlotType.EVENT,  # Try changing to PlotType.VIOLIN for
-    )
+# @pytest.mark.parametrize(
+#     "georgi_marvel_energy_file,qn_list,state_list,outfile",
+#     [
+#         (
+#             r"\path\to\georgi's\marvel\energies.txt",  # Update this!
+#             [
+#                 "state",
+#                 "fs",
+#                 "Omega",
+#                 "parity",
+#                 "v",
+#                 "J",
+#             ],  # The quantum numbers in your marvel energies
+#             [
+#                 "X_4Sigma-",
+#                 "A_4Pi",
+#             ],  # List the states in your molecule you want to plot in left-to-right order
+#             r"\path\to\where\to\save\plot.png",  # Update this!
+#         )
+#     ],
+# )
+# def test_georgi(
+#     georgi_marvel_energy_file,
+#     qn_list,
+#     state_list,
+#     outfile,
+# ):
+#     diatomic_energies = read_marvel_energies(
+#         marvel_energy_file=georgi_marvel_energy_file, qn_list=qn_list
+#     )
+#     plot_state_coverage(
+#         energies=diatomic_energies,
+#         state_list=state_list,
+#         show=False,
+#         out_file=outfile,
+#         plot_type=PlotType.EVENT,  # Try changing to PlotType.VIOLIN for
+#     )
 
 
 @pytest.mark.parametrize(
