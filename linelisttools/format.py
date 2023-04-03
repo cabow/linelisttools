@@ -61,8 +61,9 @@ def output_data(
 def format_row(fortran_format_list: t.List, data_row: t.Tuple) -> str:
     out_row = ""
     for i in range(0, len(data_row)):
-        if i > 0:
-            out_row += " "
+        # Below removed - account for spaces between tokens in the format tokens.
+        # if i > 0:
+        #     out_row += " "
         out_row += fortran_format(val=data_row[i], fmt=fortran_format_list[i])
     return out_row
 

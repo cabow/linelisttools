@@ -35,7 +35,8 @@ class ExoMolStatesHeader:
     _state_id_default = "id"
     _energy_default = "energy"
     _degeneracy_default = "degeneracy"
-    _rigorous_qn_default = "J"
+    _j_qn_default = "J"
+    _hyperfine_qn_default = "F"
     _unc_default = "unc"
     _lifetime_default = "lifetime"
     _source_tag_default = "source_tag"
@@ -54,7 +55,9 @@ class ExoMolStatesHeader:
         state_id: str = _state_id_default,
         energy: str = _energy_default,
         degeneracy: str = _degeneracy_default,
-        rigorous_qn: str = _rigorous_qn_default,
+        is_hyperfine: bool = False,
+        hyperfine_qn: str = _hyperfine_qn_default,
+        j_qn: str = _j_qn_default,
         unc: t.Optional[str] = _unc_default,
         lifetime: t.Optional[str] = _lifetime_default,
         parity: t.Union[StatesParity, t.List[StatesParity]] = StatesParity.TOTAL_PARITY,
@@ -65,10 +68,15 @@ class ExoMolStatesHeader:
         other_qn: t.Optional[t.Union[str, t.List[str]]] = None,
         source_tag: t.Optional[str] = _source_tag_default,
     ):
+        if not is_hyperfine:
+            hyperfine_qn = None
+
         self._state_id = state_id
         self._energy = energy
         self._degeneracy = degeneracy
-        self._rigorous_qn = rigorous_qn
+        self._is_hyperfine = is_hyperfine
+        self._hyperfine_qn = hyperfine_qn
+        self._j_qn = j_qn
         self._unc = unc
         self._lifetime = lifetime
         self._parity = parity
@@ -91,7 +99,8 @@ class ExoMolStatesHeader:
             self._state_id,
             self._energy,
             self._degeneracy,
-            self._rigorous_qn,
+            self._hyperfine_qn,
+            self._j_qn,
             self._unc,
             self._lifetime,
             self._parity,
@@ -131,12 +140,28 @@ class ExoMolStatesHeader:
         self._degeneracy = value
 
     @property
-    def rigorous_qn(self) -> str:
-        return self._rigorous_qn
+    def is_hyperfine(self) -> bool:
+        return self._is_hyperfine
 
-    @rigorous_qn.setter
-    def rigorous_qn(self, value: str):
-        self._rigorous_qn = value
+    @is_hyperfine.setter
+    def is_hyperfine(self, value: bool):
+        self._is_hyperfine = value
+
+    @property
+    def hyperfine_qn(self) -> str:
+        return self._hyperfine_qn
+
+    @hyperfine_qn.setter
+    def hyperfine_qn(self, value: str):
+        self._hyperfine_qn = value
+
+    @property
+    def j_qn(self) -> str:
+        return self._j_qn
+
+    @j_qn.setter
+    def j_qn(self, value: str):
+        self._j_qn = value
 
     @property
     def unc(self) -> t.Optional[str]:
@@ -218,6 +243,12 @@ class ExoMolStatesHeader:
 
     def default_source_tag(self):
         self._source_tag = self._source_tag_default
+
+    def get_rigorous_qn(self) -> str:
+        if self.is_hyperfine:
+            return self._hyperfine_qn
+        else:
+            return self.j_qn
 
 
 def read_states_file(
@@ -791,6 +822,7 @@ def predict_shifts(
     fit_qn_list: t.List[str],
     j_segment_threshold_size: int = 14,
     show_plot: bool = False,
+    plot_states: t.List[str] = None,
     energy_calc_col: str = "energy_calc",
     energy_obs_col: str = "energy_obs",
     energy_dif_col: str = "energy_dif",
@@ -816,6 +848,8 @@ def predict_shifts(
             The segments that obs.-calc. predictions are fit to will increase in size if multiple sets of missing data
             exist within an array of sequential J values of length equal to this argument.
         show_plot:                Determines whether plots of the input and fitted data are shown.
+        plot_states:              The text labels indicating which states plots should be shown for, when show_plot is
+            True.
         energy_calc_col:          The string column name for the calculated energy column in states_matched.
         energy_obs_col:           The string column name for the observed energy column in states_matched
         energy_dif_col:           The string column name for the energy difference column in states_matched
@@ -846,12 +880,16 @@ def predict_shifts(
     #     )
 
     worker = functools.partial(
-        fit_predictions, j_segment_threshold_size, states_header.rigorous_qn, show_plot
+        fit_predictions,
+        j_segment_threshold_size,
+        states_header.get_rigorous_qn(),
+        show_plot,
+        plot_states,
     )
     shift_groups = generate_fit_groups(
         states=states_matched,
         fit_qn_list=fit_qn_list,
-        fit_x_col=states_header.rigorous_qn,
+        fit_x_col=states_header.get_rigorous_qn(),
         energy_calc_col=energy_calc_col,
         energy_obs_col=energy_obs_col,
         energy_dif_col=energy_dif_col,
@@ -870,12 +908,12 @@ def predict_shifts(
     pe_fit_shifts = pd.DataFrame(
         data=shift_predictions,
         columns=fit_qn_list
-        + [states_header.rigorous_qn, "pe_fit_energy_shift", "pe_fit_unc"],
+        + [states_header.get_rigorous_qn(), "pe_fit_energy_shift", "pe_fit_unc"],
     )
     # pe_fit_shifts[fit_qn_list] = pe_fit_shifts["fit_qn"].str.split("|", len(fit_qn_list), expand=True)
     # del pe_fit_shifts["fit_qn"]
 
-    qn_merge_cols = fit_qn_list + [states_header.rigorous_qn]
+    qn_merge_cols = fit_qn_list + [states_header.get_rigorous_qn()]
     states_matched = states_matched.merge(
         pe_fit_shifts, left_on=qn_merge_cols, right_on=qn_merge_cols, how="left"
     )
@@ -905,7 +943,7 @@ def predict_shifts(
     )
 
     # Update energies with higher-J shift extrapolations:
-    j_max_col = states_header.rigorous_qn + "_max"
+    j_max_col = states_header.get_rigorous_qn() + "_max"
     pe_extrapolate_shifts = pd.DataFrame(
         data=extrapolate_j_shifts,
         columns=fit_qn_list
@@ -925,7 +963,7 @@ def predict_shifts(
         (states_matched["energy_final"].isna())
         & (~states_matched[j_max_col].isna())
         & (~states_matched["energy_calc"].isna())
-        & (states_matched[states_header.rigorous_qn] > states_matched[j_max_col]),
+        & (states_matched[states_header.get_rigorous_qn()] > states_matched[j_max_col]),
         states_header.source_tag,
     ] = SourceTag.PS_EXTRAPOLATION
     # Scale unc based on j over j_max.
@@ -939,7 +977,7 @@ def predict_shifts(
             std=x["pe_extrapolate_energy_shift_std"],
             j_factor=0.0001,
             v_factor=0.05,
-            j_val=x[states_header.rigorous_qn],
+            j_val=x[states_header.get_rigorous_qn()],
             j_max=x[j_max_col],
         )
         if x[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION
@@ -995,14 +1033,16 @@ def fit_predictions(
     j_segment_threshold_size: int,
     j_col: str,
     show_plot: bool,
+    plot_states: t.List[str],
     grouped_data: t.Tuple[t.List[str], pd.DataFrame],
 ) -> t.Tuple[t.List[tuple], t.List[tuple]]:
     """
 
     Args:
         j_segment_threshold_size:
-        j_col:
-        show_plot:
+        j_col:       The String column name for the J column.
+        show_plot:   Determines whether plots of the input and fitted data are shown.
+        plot_states: The text labels indicating which states plots should be shown for, when show_plot is True.
         grouped_data:
 
     Returns:
@@ -1013,6 +1053,9 @@ def fit_predictions(
     extrapolate_j_shifts = []
     fit_qn_list = tuple(grouped_data[0])
     df_group = grouped_data[1]
+    if show_plot and plot_states is not None:
+        show_plot = df_group["state"].iloc[0] in plot_states
+
     j_max = df_group[j_col].max()
     j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
     missing_j = np.array(np.setdiff1d(j_coverage_to_max, df_group[j_col]))
@@ -1399,7 +1442,7 @@ def set_calc_states(
     )
     states[states_header.unc] = states.apply(
         lambda x: estimate_uncertainty(
-            x[states_header.rigorous_qn],
+            x[states_header.get_rigorous_qn()],
             x[states_header.vibrational_qn],
             unc_j_factor,
             unc_v_factor,

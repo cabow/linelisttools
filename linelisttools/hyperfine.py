@@ -120,6 +120,24 @@ def calc_num_possible_hf_trans(
     f_u_list: t.List[float],
     f_l_list: t.List[float],
 ) -> int:
+    """
+    Determines the present values of DeltaF from the input F_u -> F_l transitions and then calculates the number of
+    possible hyperfine transitions with those values of DeltaF between J_u and J_l.
+
+    The list of upper and lower state F quantum numbers should be the same length, such that values of F at each index
+    in both lists represent the upper and lower state values of F for a measured hyperfine transition.
+
+    Args:
+        nuclear_spin: The nuclear spin of the molecule.
+        j_u:          The upper state J quantum number.
+        j_l:          The lower state J quantum number.
+        f_u_list:     The upper state values of F for which measured hyperfine transitions exist.
+        f_l_list:     The lower state values of F for which measured hyperfine transitions exist.
+
+    Returns:
+        The integer number of possible hyperfine transitions allowed between the upper and lower states for a given set
+            of observed DeltaF values.
+    """
     present_delta_f_list = list(
         set([int(f_u - f_l) for f_u, f_l in list(zip(f_u_list, f_l_list))])
     )
