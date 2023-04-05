@@ -750,7 +750,7 @@ def estimate_uncertainty(
     Returns:
         A float representing an uncertainty estimate for a state.
     """
-    return j_factor * j_val * (j_val * +1) + v_factor * v_val
+    return j_factor * j_val * (j_val + 1) + v_factor * v_val
 
 
 def set_predicted_unc(
@@ -813,7 +813,7 @@ def generate_fit_groups(
         energy_dif_col=energy_dif_col,
         unc_col=unc_col,
     )
-    return shift_table.groupby(by=fit_qn_list)
+    return shift_table.groupby(by=fit_qn_list, as_index=False)
 
 
 def predict_shifts(
@@ -895,6 +895,7 @@ def predict_shifts(
         energy_dif_col=energy_dif_col,
         unc_col=states_header.unc,
     )
+
     with executor_type.value(max_workers=n_workers) as e:
         for result in tqdm.tqdm(
             e.map(worker, yield_grouped_data(shift_groups)), total=len(shift_groups)
@@ -1057,7 +1058,15 @@ def fit_predictions(
         show_plot = df_group["state"].iloc[0] in plot_states
 
     j_max = df_group[j_col].max()
-    j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
+
+    j_is_integer = (2 * j_max) % 2 == 0
+
+    if j_is_integer:
+        min_allowed_j = 0
+        j_coverage_to_max = range(0, j_max + 1)
+    else:
+        min_allowed_j = 0.5
+        j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
     missing_j = np.array(np.setdiff1d(j_coverage_to_max, df_group[j_col]))
     if len(missing_j) > 0:
         delta_missing_j = np.abs(missing_j[1:] - missing_j[:-1])
@@ -1086,19 +1095,26 @@ def fit_predictions(
             else:
                 segment_wing_size = int(j_segment_threshold_size)
 
-            segment_j_lower_limit = max(0.5, min(j_segment) - segment_wing_size)
+            segment_j_lower_limit = max(
+                min_allowed_j, min(j_segment) - segment_wing_size
+            )
             segment_j_upper_limit = max(
-                j_segment_threshold_size + 0.5,
+                j_segment_threshold_size + min_allowed_j,
                 max(j_segment) + segment_wing_size,
             )
-            segment_j_coverage = [
-                x / 2
-                for x in range(
-                    int(segment_j_lower_limit * 2),
-                    int((segment_j_upper_limit + 1) * 2),
-                    2,
+            if j_is_integer:
+                segment_j_coverage = range(
+                    int(segment_j_lower_limit), int(segment_j_upper_limit) + 1
                 )
-            ]
+            else:
+                segment_j_coverage = [
+                    x / 2
+                    for x in range(
+                        int(segment_j_lower_limit * 2),
+                        int((segment_j_upper_limit + 1) * 2),
+                        2,
+                    )
+                ]
             # Huber regression - resist outliers.
             x_scaler, y_scaler = StandardScaler(), StandardScaler()
             x_train = x_scaler.fit_transform(
@@ -1509,46 +1525,50 @@ def shift_parity_pairs(
     states_missing_parity_pairs = states.loc[
         states[states_header.source_tag].isna()
     ].merge(shift_table, on=shift_table_qn_cols, how="inner")
-
-    # Apply shift table mean energy difference to calculated energy.
-    states_missing_parity_pairs[energy_final_col] = states_missing_parity_pairs.apply(
-        lambda x: x[energy_calc_col] + x[energy_dif_mean_col], axis=1
-    )
-
-    # Left merge parity pair shifts onto states to keep all states and give shift data where needed.
-    states = states.merge(
+    if len(states_missing_parity_pairs) == 0:
+        return states
+    else:
+        # Apply shift table mean energy difference to calculated energy.
         states_missing_parity_pairs[
-            [states_header.state_id, energy_final_col, energy_dif_unc_col]
-        ],
-        on=[states_header.state_id],
-        how="left",
-        suffixes=("", "_temp"),
-    )
-    states.loc[
-        states[states_header.state_id].isin(
-            states_missing_parity_pairs[states_header.state_id]
-        ),
-        states_header.source_tag,
-    ] = SourceTag.PS_PARITY_PAIR
-    # Take the energy_final_temp from the merged DataFrame as energy_final where it exists, and the energy_dif_unc as
-    # the unc for these rows.
-    energy_final_temp_col = energy_final_col + "_temp"
-    # Change to find new merge cols based on "PS_1" source_tag?
-    states[energy_final_col] = np.where(
-        states[energy_final_temp_col].isna(),
-        states[energy_final_col],
-        states[energy_final_temp_col],
-    )
-    states[states_header.unc] = np.where(
-        states[energy_final_temp_col].isna(),
-        states[states_header.unc],
-        states[energy_dif_unc_col],
-    )
-    # Drop any temp columns, including the now useless (as it has been copied over into unc) energy_dif_unc column.
-    states = states.drop(
-        list(states.filter(regex="_temp")) + [energy_dif_unc_col], axis=1
-    )
-    # states = states.drop(energy_dif_unc_col, axis=1)
-    # Reorder on id for convenience.
-    states = states.sort_values(by=[states_header.state_id], ascending=True)
-    return states
+            energy_final_col
+        ] = states_missing_parity_pairs.apply(
+            lambda x: x[energy_calc_col] + x[energy_dif_mean_col], axis=1
+        )
+
+        # Left merge parity pair shifts onto states to keep all states and give shift data where needed.
+        states = states.merge(
+            states_missing_parity_pairs[
+                [states_header.state_id, energy_final_col, energy_dif_unc_col]
+            ],
+            on=[states_header.state_id],
+            how="left",
+            suffixes=("", "_temp"),
+        )
+        states.loc[
+            states[states_header.state_id].isin(
+                states_missing_parity_pairs[states_header.state_id]
+            ),
+            states_header.source_tag,
+        ] = SourceTag.PS_PARITY_PAIR
+        # Take the energy_final_temp from the merged DataFrame as energy_final where it exists, and the energy_dif_unc as
+        # the unc for these rows.
+        energy_final_temp_col = energy_final_col + "_temp"
+        # Change to find new merge cols based on "PS_1" source_tag?
+        states[energy_final_col] = np.where(
+            states[energy_final_temp_col].isna(),
+            states[energy_final_col],
+            states[energy_final_temp_col],
+        )
+        states[states_header.unc] = np.where(
+            states[energy_final_temp_col].isna(),
+            states[states_header.unc],
+            states[energy_dif_unc_col],
+        )
+        # Drop any temp columns, including the now useless (as it has been copied over into unc) energy_dif_unc column.
+        states = states.drop(
+            list(states.filter(regex="_temp")) + [energy_dif_unc_col], axis=1
+        )
+        # states = states.drop(energy_dif_unc_col, axis=1)
+        # Reorder on id for convenience.
+        states = states.sort_values(by=[states_header.state_id], ascending=True)
+        return states
