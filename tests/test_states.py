@@ -7,7 +7,7 @@ import pytest
 from linelisttools.concurrence import ExecutorType
 from linelisttools.format import SourceTag
 from linelisttools.marvel import read_marvel_energies
-from linelisttools.states import (  # match_levels,
+from linelisttools.states import (
     ExoMolStatesHeader,
     match_states,
     predict_shifts,
@@ -16,212 +16,133 @@ from linelisttools.states import (  # match_levels,
     shift_parity_pairs,
 )
 
+# @pytest.fixture(scope="session")
+# def alo_states_file():
+#     return (Path(__file__).parent / r"./inputs/27Al-16O__ATP_Modified.states").resolve()
+#
+#
+# @pytest.fixture(scope="session")
+# def alo_marvel_energies_file():
+#     return (
+#         Path(__file__).parent / r"./inputs/AlO_MARVEL_Energies_1.9-clean.txt"
+#     ).resolve()
+
 
 @pytest.fixture(scope="session")
-def alo_marvel_energies_file():
-    return (
-        Path(__file__).parent / r"./inputs/AlO_MARVEL_Energies_1.9-clean.txt"
-    ).resolve()
+def so_states_file():
+    return (Path(__file__).parent / r"./inputs/SO.states").resolve()
 
 
 @pytest.fixture(scope="session")
-def alo_states_file():
-    return (Path(__file__).parent / r"./inputs/27Al-16O__ATP_Modified.states").resolve()
+def so_marvel_energies_file():
+    return (Path(__file__).parent / r"./inputs/SO_MarvelEnergies.txt").resolve()
 
 
-@pytest.mark.parametrize(
-    "marvel_qn_cols, qn_match_cols, match_source_tag, shift_table_qn_cols, levels_new_qn_cols, suffixes, "
-    "energy_col, unc_col, j_col, parity_col, v_col, source_tag_col, id_col, is_isotopologue_match, "
-    "overwrite_non_match_qn_cols, j_segment_threshold_size",
-    [
-        (
-            [
-                "state",
-                "v",
-                "J",
-                "N",
-                "fs",
-                ExoMolStatesHeader.StatesParity.TOTAL_PARITY.value,
-            ],
-            [
-                "state",
-                "v",
-                "J",
-                ExoMolStatesHeader.StatesParity.TOTAL_PARITY.value,
-                "Omega",
-            ],
-            SourceTag.MARVELISED,
-            ["state", "v", "Omega", "J"],
-            None,
-            ("_calc", "_obs"),
-            "energy",
-            "unc",
-            "J",
-            ExoMolStatesHeader.StatesParity.TOTAL_PARITY.value,
-            "v",
-            "source_tag",
-            "id",
-            False,
-            False,
-            14,
-        )
-    ],
-)
-def test_alo_states(
-    alo_marvel_energies_file,
-    marvel_qn_cols,
-    alo_states_file,
-    qn_match_cols,
-    match_source_tag,
-    shift_table_qn_cols,
-    levels_new_qn_cols,
-    suffixes,
-    energy_col,
-    unc_col,
-    j_col,
-    parity_col,
-    v_col,
-    source_tag_col,
-    id_col,
-    is_isotopologue_match,
-    overwrite_non_match_qn_cols,
-    j_segment_threshold_size,
+def test_so_states(
+    so_states_file,
+    so_marvel_energies_file,
 ):
-    pd.set_option("display.max_columns", None)
-    levels_new = read_marvel_energies(
-        alo_marvel_energies_file,
-        marvel_qn_cols,
-    )
-    print(levels_new)
-
-    def temp_set_omega(state: str, fine_struct: str) -> float:
-        # This is a method specific to handling the AlO states and how they were done in MARVEL.
-        series = state[0]
-        if series in ["X", "B", "D", "F"]:
-            # For AlO these series are all Sigma states.
-            return 0.5
-        elif series == "A":
-            if fine_struct == "F1":
-                return 1.5
-            elif fine_struct == "F2":
-                return 0.5
-        elif series == "C":
-            if fine_struct == "F1":
-                return 0.5
-            elif fine_struct == "F2":
-                return 1.5
-        elif series == "E":
-            if fine_struct == "F1":
-                return 2.5
-            elif fine_struct == "F2":
-                return 1.5
-        else:
-            return np.nan
-
-    levels_new["Omega"] = levels_new.apply(
-        lambda x: temp_set_omega(x["state"], x["fs"]), axis=1
-    )
-    # levels_initial = pd.read_csv(
-    #     alo_states_file,
-    #     delim_whitespace=True,
-    #     names=[
-    #         id_col,
-    #         energy_col,
-    #         "degeneracy",
-    #         j_col,
-    #         "lifetime",
-    #         parity_col,
-    #         ExoMolStatesHeader.StatesParity.ROTATIONLESS_PARITY.value,
-    #         "state",
-    #         v_col,
-    #         "Lambda",
-    #         "Sigma",
-    #         "Omega",
-    #     ],
-    # )
-    states_header = ExoMolStatesHeader(
+    header = ExoMolStatesHeader(
         unc=None,
-        parity=[
-            ExoMolStatesHeader.StatesParity.TOTAL_PARITY,
-            ExoMolStatesHeader.StatesParity.ROTATIONLESS_PARITY,
-        ],
+        lifetime=None,
+        parity=["parity_tot", "parity_rotless"],
         symmetry="state",
-        vibrational_qn=v_col,
+        vibrational_qn="v",
         other_qn=["Lambda", "Sigma", "Omega"],
         source_tag=None,
     )
-    states_calc = read_exomol_states(alo_states_file, states_header)
-    print(states_calc)
-    states_matched = match_states(
-        states_calc=states_calc,
-        states_obs=levels_new,
-        qn_match_cols=qn_match_cols,
-        match_source_tag=match_source_tag,
-        states_header=states_header,
-        states_new_qn_cols=levels_new_qn_cols,
-        suffixes=suffixes,
-        is_isotopologue_match=is_isotopologue_match,
-        overwrite_non_match_qn_cols=overwrite_non_match_qn_cols,
+    df_duo = read_exomol_states(so_states_file, exomol_states_header=header)
+    print(f"Number of Duo states: {len(df_duo)}")
+    print("Duo states: \n", df_duo)
+
+    df_marvel = pd.read_csv(
+        so_marvel_energies_file,
+        delim_whitespace=True,
+        names=[
+            "i",
+            "energy",
+            "state",
+            "degeneracy",
+            "J",
+            "parity_tot",
+            "parity_rotless",
+            "v",
+            "Lambda",
+            "Sigma",
+            "Omega",
+            "unc",
+        ],
     )
-    # matched_states = match_levels(
-    #     levels_initial=levels_initial,
-    #     levels_new=levels_new,
-    #     qn_match_cols=qn_match_cols,
-    #     match_source_tag=match_source_tag,
-    #     levels_new_qn_cols=levels_new_qn_cols,
-    #     suffixes=suffixes,
-    #     energy_col=energy_col,
-    #     unc_col=unc_col,
-    #     source_tag_col=source_tag_col,
-    #     id_col=id_col,
-    #     is_isotopologue_match=is_isotopologue_match,
-    #     overwrite_non_match_qn_cols=overwrite_non_match_qn_cols,
-    # )
-    # print(states_matched)
-    # print(matched_states)
-    # assert matched_states.equals(states_matched)
-    shift_table_qn_cols.remove(states_header.rigorous_qn)
-    states_matched = predict_shifts(
-        states_matched=states_matched,
-        fit_qn_list=shift_table_qn_cols,
-        states_header=states_header,
-        j_segment_threshold_size=j_segment_threshold_size,
+    df_marvel = df_marvel[["state", "v", "Omega", "parity_tot", "J", "energy", "unc"]]
+    print("Marvel levels: \n", df_marvel)
+
+    df_match = match_states(
+        states_calc=df_duo,
+        states_obs=df_marvel,
+        qn_match_cols=["J", "parity_tot", "state", "v", "Omega"],
+        match_source_tag=SourceTag.MARVELISED,
+        states_header=header,
+        # states_new_qn_cols=[
+        #     # "state", "v",
+        #     # "Omega",
+        #     # "Sigma",
+        #     # "Lambda",
+        # ],
+        # overwrite_non_match_qn_cols=True,
+    )
+    print(df_match)
+
+    df_match_check = df_match.loc[df_match["source_tag"] == SourceTag.MARVELISED]
+    print(f"Number of Marvel states: {len(df_match_check)}")
+    print(
+        f"Absolute mean Obs.-Calc.: {df_match_check['energy_dif'].abs().mean()},"
+        f" Std.Dev.: {df_match_check['energy_dif'].abs().std()}"
+    )
+    rms_check = df_match_check.loc[~df_match_check["energy_dif"].isna(), "energy_dif"]
+    print("RMS: ", np.sqrt(sum(rms_check**2) / len(rms_check)))
+    del rms_check
+
+    df_match["Omega_fit"] = df_match.apply(
+        lambda x: x["Omega"] * -1 if x["parity_tot"] == "-" else x["Omega"], axis=1
+    )
+
+    df_match = shift_parity_pairs(
+        states=df_match,
+        states_header=header,
+        shift_table_qn_cols=["state", "v", "Omega_fit", "J"],
+    )
+    print(
+        "States with PS_1 parity pair Predicted Shifts: \n",
+        df_match.loc[df_match["source_tag"] == SourceTag.PS_PARITY_PAIR],
+    )
+
+    df_match = predict_shifts(
+        states_matched=df_match,
+        fit_qn_list=["state", "v", "Omega_fit"],
+        states_header=header,
+        j_segment_threshold_size=10,
         show_plot=True,
+        plot_states=["A3Pi"],
         executor_type=ExecutorType.THREADS,
         n_workers=8,
     )
-    print(states_matched)
-    energy_calc_col = states_header.energy + "_calc"
-    energy_obs_col = states_header.energy + "_obs"
-    energy_dif_col = states_header.energy + "_dif"
-    energy_final_col = states_header.energy + "_final"
-    states_matched = shift_parity_pairs(
-        states=states_matched,
-        states_header=states_header,
-        shift_table_qn_cols=shift_table_qn_cols,
-        energy_calc_col=energy_calc_col,
-        energy_obs_col=energy_obs_col,
-        energy_dif_col=energy_dif_col,
-        energy_final_col=energy_final_col,
+    print(
+        "States with linear regression (PS_2) & extrapolation (PS_3) Predicted Shifts: \n",
+        df_match,
     )
-    states_matched = set_calc_states(
-        states=states_matched,
-        states_header=states_header,
+
+    df_match = set_calc_states(
+        states=df_match,
+        states_header=header,
         unc_j_factor=0.0001,
         unc_v_factor=0.05,
-        energy_final_col=energy_final_col,
-        energy_calc_col=energy_calc_col,
     )
-    states_matched = states_matched.sort_values(
-        by=[states_header.rigorous_qn, parity_col, energy_final_col]
-    )
-    states_matched[states_header.state_id] = np.arange(1, len(states_matched) + 1)
-    print(states_matched)
+    print("States with predicted Calculated (Ca) Unc.: \n", df_match)
 
 
 def test_exomolstatesheader_formatting():
     header = ExoMolStatesHeader(
-        rigorous_qn="F",
+        is_hyperfine=False,
         unc=None,
         parity=ExoMolStatesHeader.StatesParity.ROTATIONLESS_PARITY,
         symmetry="sym",

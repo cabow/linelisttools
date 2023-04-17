@@ -37,6 +37,7 @@ class ExoMolStatesHeader:
     _degeneracy_default = "degeneracy"
     _j_qn_default = "J"
     _hyperfine_qn_default = "F"
+    _nuclear_spin_default = "I"
     _unc_default = "unc"
     _lifetime_default = "lifetime"
     _source_tag_default = "source_tag"
@@ -57,6 +58,7 @@ class ExoMolStatesHeader:
         degeneracy: str = _degeneracy_default,
         is_hyperfine: bool = False,
         hyperfine_qn: str = _hyperfine_qn_default,
+        nuclear_spin: str = _nuclear_spin_default,
         j_qn: str = _j_qn_default,
         unc: t.Optional[str] = _unc_default,
         lifetime: t.Optional[str] = _lifetime_default,
@@ -70,12 +72,14 @@ class ExoMolStatesHeader:
     ):
         if not is_hyperfine:
             hyperfine_qn = None
+            nuclear_spin = None
 
         self._state_id = state_id
         self._energy = energy
         self._degeneracy = degeneracy
         self._is_hyperfine = is_hyperfine
         self._hyperfine_qn = hyperfine_qn
+        self._nuclear_spin = nuclear_spin
         self._j_qn = j_qn
         self._unc = unc
         self._lifetime = lifetime
@@ -95,22 +99,40 @@ class ExoMolStatesHeader:
                 else:
                     yield str(item)
 
-        header_order = [
-            self._state_id,
-            self._energy,
-            self._degeneracy,
-            self._hyperfine_qn,
-            self._j_qn,
-            self._unc,
-            self._lifetime,
-            self._parity,
-            self._symmetry,
-            self._counting_number,
-            self._isomer,
-            self._vibrational_qn,
-            self._other_qn,
-            self._source_tag,
-        ]
+        if self._is_hyperfine:
+            header_order = [
+                self._state_id,
+                self._energy,
+                self._degeneracy,
+                self._hyperfine_qn,
+                self._nuclear_spin,
+                self._unc,
+                self._lifetime,
+                self._parity,
+                self._j_qn,
+                self._symmetry,
+                self._counting_number,
+                self._isomer,
+                self._vibrational_qn,
+                self._other_qn,
+                self._source_tag,
+            ]
+        else:
+            header_order = [
+                self._state_id,
+                self._energy,
+                self._degeneracy,
+                self._j_qn,
+                self._unc,
+                self._lifetime,
+                self._parity,
+                self._symmetry,
+                self._counting_number,
+                self._isomer,
+                self._vibrational_qn,
+                self._other_qn,
+                self._source_tag,
+            ]
         header_order = [column for column in header_order if column is not None]
 
         return list(flatten(header_order))
@@ -154,6 +176,14 @@ class ExoMolStatesHeader:
     @hyperfine_qn.setter
     def hyperfine_qn(self, value: str):
         self._hyperfine_qn = value
+
+    @property
+    def nuclear_spin(self) -> str:
+        return self._nuclear_spin
+
+    @nuclear_spin.setter
+    def nuclear_spin(self, value: str):
+        self._nuclear_spin = value
 
     @property
     def j_qn(self) -> str:
@@ -750,6 +780,7 @@ def estimate_uncertainty(
     Returns:
         A float representing an uncertainty estimate for a state.
     """
+
     return j_factor * j_val * (j_val + 1) + v_factor * v_val
 
 
@@ -830,7 +861,13 @@ def predict_shifts(
     n_workers: int = 8,
 ) -> pd.DataFrame:
     """
-    TODO: WRITE THE REST OF THIS.
+    Calculates predictions for the obs.-calc. energy differences of levels in an arbitrary grouping, for which some
+    observational data exists. The arbitrary grouping is based on the quantum numbers passed to fit_qn_list and as such
+    can be used to predict energy shifts for groupings such as vibronic bands or spin-orbit components within vibronic
+    bands (i.e.: by passing ["state", "v"] or ["state", "v", "Omega"] respectively).
+
+    Predicted energy shifts are calculated as a function of the rigorous quantum number specified in the
+    :func:`~linelisttools.states.ExoMolStatesHeader` object corresponding to the states file DataFrame.
 
     The original, marvel and dif energy columns are intended to come from :func:`linelisttools.states.match_levels`,
     based on the name of the energy column and suffixes passed to that method. Defaults to the same default values if
@@ -861,30 +898,14 @@ def predict_shifts(
         Outputs the states_matched DataFrame with updated interpolated and extrapolated energy shifts in the series
         defined by fit_qn_list for which Marvel data exists.
     """
-    # if fit_qn_list is not None:
-    #     shift_table["fit_qn"] = shift_table.apply(
-    #         lambda x: "|".join(str(x[qn]) for qn in fit_qn_list), axis=1
-    #     )
+
     shift_predictions = []
     extrapolate_j_shifts = []
-    # for fit_qn in shift_table["fit_qn"].unique():
-    #     shift_predictions, extrapolate_j_shifts = old_fit_predictions(
-    #         shift_table=shift_table,
-    #         shift_predictions=shift_predictions,
-    #         extrapolate_j_shifts=extrapolate_j_shifts,
-    #         colour="#8b4513",
-    #         fit_qn=fit_qn,
-    #         j_segment_threshold_size=14,
-    #         j_col=j_col,
-    #         show_plot=show_plot,
-    #     )
 
     worker = functools.partial(
         fit_predictions,
         j_segment_threshold_size,
         states_header.get_rigorous_qn(),
-        show_plot,
-        plot_states,
     )
     shift_groups = generate_fit_groups(
         states=states_matched,
@@ -902,6 +923,45 @@ def predict_shifts(
         ):
             shift_predictions.append(result[0])
             extrapolate_j_shifts.append(result[1])
+
+    if show_plot:
+        for fit_idx, fitted_group_data in enumerate(yield_grouped_data(shift_groups)):
+            # Plot if shifts were calculated and either no plot_states specified or fitted state in plot_states.
+            if len(shift_predictions[fit_idx]) != 0 and (
+                plot_states is None
+                or fitted_group_data[0][fit_qn_list.index("state")] in plot_states
+            ):
+                plt.scatter(
+                    fitted_group_data[1][states_header.get_rigorous_qn()],
+                    fitted_group_data[1]["energy_dif_mean"],
+                    marker="x",
+                    linewidth=0.5,
+                    facecolors=get_vibrant_colors(1),
+                    label=" ".join(str(qn) for qn in fitted_group_data[0]),
+                    zorder=1,
+                )
+                plt.scatter(
+                    [
+                        prediction[len(fitted_group_data[0])]
+                        for prediction in shift_predictions[fit_idx]
+                    ],
+                    [
+                        prediction[len(fitted_group_data[0]) + 1]
+                        for prediction in shift_predictions[fit_idx]
+                    ],
+                    marker="^",
+                    linewidth=0.5,
+                    edgecolors="#000000",
+                    facecolors="none",
+                    label=f"{' '.join(str(qn) for qn in fitted_group_data[0])} FIT",
+                    zorder=2,
+                )
+                plt.legend(loc="best", prop={"size": 10})
+                plt.xlabel(xlabel=states_header.get_rigorous_qn())
+                plt.ylabel(ylabel=r"Obs.-Calc. (cm-1)")
+                plt.tight_layout()
+                plt.show()
+
     shift_predictions = [item for items in shift_predictions for item in items]
     extrapolate_j_shifts = [item for items in extrapolate_j_shifts for item in items]
 
@@ -1033,8 +1093,6 @@ def predict_shifts(
 def fit_predictions(
     j_segment_threshold_size: int,
     j_col: str,
-    show_plot: bool,
-    plot_states: t.List[str],
     grouped_data: t.Tuple[t.List[str], pd.DataFrame],
 ) -> t.Tuple[t.List[tuple], t.List[tuple]]:
     """
@@ -1042,8 +1100,6 @@ def fit_predictions(
     Args:
         j_segment_threshold_size:
         j_col:       The String column name for the J column.
-        show_plot:   Determines whether plots of the input and fitted data are shown.
-        plot_states: The text labels indicating which states plots should be shown for, when show_plot is True.
         grouped_data:
 
     Returns:
@@ -1054,8 +1110,6 @@ def fit_predictions(
     extrapolate_j_shifts = []
     fit_qn_list = tuple(grouped_data[0])
     df_group = grouped_data[1]
-    if show_plot and plot_states is not None:
-        show_plot = df_group["state"].iloc[0] in plot_states
 
     j_max = df_group[j_col].max()
 
@@ -1072,19 +1126,7 @@ def fit_predictions(
         delta_missing_j = np.abs(missing_j[1:] - missing_j[:-1])
         split_idx = np.where(delta_missing_j >= j_segment_threshold_size)[0] + 1
         missing_j_segments = np.array_split(missing_j, split_idx)
-        if show_plot:
-            # Plot the actual data:
-            fig = plt.figure()
-            ax = fig.gca()
-            ax.scatter(
-                df_group[j_col],
-                df_group["energy_dif_mean"],
-                marker="x",
-                linewidth=0.5,
-                facecolors=get_vibrant_colors(1),
-                label=" ".join(str(qn) for qn in fit_qn_list),
-                zorder=1,
-            )
+
         for j_segment in missing_j_segments:
             # If the segment is entirely within the slice then the wing size is half the threshold.
             if (
@@ -1188,32 +1230,12 @@ def fit_predictions(
             dif_squared_energy = dif_energy**2
             std_energy = np.sqrt(sum(dif_squared_energy) / len(dif_energy))
 
-            if show_plot:
-                ax.scatter(
-                    j_segment,
-                    segment_predictions,
-                    marker="^",
-                    linewidth=0.5,
-                    edgecolors="#000000",
-                    facecolors="none",
-                    label=f"{' '.join(str(qn) for qn in fit_qn_list)} FIT",
-                    zorder=2,
-                )
-
             for entry in [
                 fit_qn_list + (j, prediction, std_energy)
                 for j, prediction in zip(j_segment, list(segment_predictions))
             ]:
                 shift_predictions.append(entry)
 
-        if show_plot:
-            ax.legend(loc="upper left", prop={"size": 10})
-            ax.set_xlabel(xlabel=j_col)
-            ax.set_ylabel(ylabel=r"Obs.-Calc. (cm-1)")
-            # plt.ylim(bottom=-1, top=1)
-            plt.sca(ax)
-            plt.tight_layout()
-            plt.show()
     # Now take the mean of the last 10 points within 2std and take the mean shift there and apply it to
     # all later trans.
     shift_table_final_rows = (
@@ -1233,177 +1255,6 @@ def fit_predictions(
     return shift_predictions, extrapolate_j_shifts
 
 
-# Deprecated - slower and handling of column splitting/retrieving column types an unnecessary hassle.
-def old_fit_predictions(
-    shift_table: pd.DataFrame,
-    shift_predictions: t.List[t.List],
-    extrapolate_j_shifts: t.List[t.List],
-    colour: str,
-    fit_qn: str,
-    j_segment_threshold_size: int = 14,
-    j_col: str = "J",
-    show_plot: bool = False,
-):
-    shift_table_slice = shift_table.loc[
-        (shift_table["fit_qn"] == fit_qn), [j_col, "energy_dif_mean"]
-    ]
-    j_max = shift_table_slice[j_col].max()
-    j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
-    missing_j = np.array(np.setdiff1d(j_coverage_to_max, shift_table_slice[j_col]))
-    if len(missing_j) > 0:
-
-        delta_missing_j = np.abs(missing_j[1:] - missing_j[:-1])
-        split_idx = np.where(delta_missing_j >= j_segment_threshold_size)[0] + 1
-        missing_j_segments = np.array_split(missing_j, split_idx)
-        if show_plot:
-            # Plot the actual data:
-            plt.scatter(
-                shift_table_slice[j_col],
-                shift_table_slice["energy_dif_mean"],
-                marker="x",
-                linewidth=0.5,
-                facecolors=colour,
-                label=fit_qn,
-                zorder=1,
-            )
-        for j_segment in missing_j_segments:
-            # If the segment is entirely within the slice then the wing size is half the threshold. This
-            if (
-                min(j_segment) > shift_table_slice[j_col].min()
-                and max(j_segment) < shift_table_slice[j_col].max()
-            ):
-                segment_wing_size = int(j_segment_threshold_size / 2)
-            else:
-                segment_wing_size = int(j_segment_threshold_size)
-
-            segment_j_lower_limit = max(0.5, min(j_segment) - segment_wing_size)
-            segment_j_upper_limit = max(
-                j_segment_threshold_size + 0.5,
-                max(j_segment) + segment_wing_size,
-            )
-            segment_j_coverage = [
-                x / 2
-                for x in range(
-                    int(segment_j_lower_limit * 2),
-                    int((segment_j_upper_limit + 1) * 2),
-                    2,
-                )
-            ]
-            # Huber regression - resist outliers.
-            x_scaler, y_scaler = StandardScaler(), StandardScaler()
-            x_train = x_scaler.fit_transform(
-                np.array(
-                    shift_table_slice.loc[
-                        (shift_table_slice[j_col] >= segment_j_lower_limit)
-                        & (shift_table_slice[j_col] <= segment_j_upper_limit),
-                        j_col,
-                    ]
-                )[..., None]
-            )
-            y_train = y_scaler.fit_transform(
-                np.array(
-                    shift_table_slice.loc[
-                        (shift_table_slice[j_col] >= segment_j_lower_limit)
-                        & (shift_table_slice[j_col] <= segment_j_upper_limit),
-                        "energy_dif_mean",
-                    ]
-                )[..., None]
-            )
-            model = HuberRegressor(epsilon=1.35, max_iter=500)
-            model.fit(x_train, y_train.ravel())
-            model_segment_predictions = model.predict(
-                x_scaler.transform(j_segment[..., None])
-            ).reshape(-1, 1)
-            segment_predictions = y_scaler.inverse_transform(
-                model_segment_predictions
-            ).ravel()
-            # Find the J we are making predictions for that we also have known energy_dif values for.
-            segment_j_in_slice = np.array(
-                np.intersect1d(segment_j_coverage, shift_table_slice[j_col])
-            )
-            segment_j_outliers = np.array(
-                shift_table_slice.loc[
-                    (shift_table_slice[j_col].isin(segment_j_in_slice))
-                    & (
-                        abs(
-                            shift_table_slice["energy_dif_mean"]
-                            - shift_table_slice["energy_dif_mean"].mean()
-                        )
-                        > (2 * shift_table_slice["energy_dif_mean"].std())
-                    ),
-                    j_col,
-                ]
-            )
-            segment_j_in_slice_no_outliers = np.setdiff1d(
-                segment_j_in_slice, segment_j_outliers
-            )
-            real_energy = np.array(
-                shift_table_slice.loc[
-                    shift_table_slice[j_col].isin(segment_j_in_slice_no_outliers),
-                    "energy_dif_mean",
-                ]
-            )
-            model_present_predictions = model.predict(
-                x_scaler.transform(segment_j_in_slice_no_outliers[..., None])
-            ).reshape(-1, 1)
-            present_predictions = y_scaler.inverse_transform(
-                model_present_predictions
-            ).ravel()
-
-            dif_energy = real_energy - present_predictions
-            dif_squared_energy = dif_energy**2
-            std_energy = np.sqrt(sum(dif_squared_energy) / len(dif_energy))
-
-            if show_plot:
-                plt.scatter(
-                    j_segment,
-                    segment_predictions,
-                    marker="^",
-                    linewidth=0.5,
-                    edgecolors="#000000",
-                    facecolors="none",
-                    label=f"{fit_qn} FIT",
-                    zorder=2,
-                )
-
-            for entry in [
-                [fit_qn, j, prediction, std_energy]
-                for j, prediction in zip(j_segment, segment_predictions)
-            ]:
-                shift_predictions.append(entry)
-        if show_plot:
-            plt.legend(loc="upper left", prop={"size": 10})
-            plt.xlabel(j_col)
-            plt.ylabel(r"Obs.-Calc. (cm$^{-1}$)")
-            # plt.ylim(bottom=-1, top=1)
-            plt.tight_layout()
-            plt.show()
-    # Now take the mean of the last 10 points within 2std and take the mean shift there and apply it to
-    # all later trans.
-    shift_table_final_rows = (
-        shift_table_slice.loc[
-            abs(
-                shift_table_slice["energy_dif_mean"]
-                - shift_table_slice["energy_dif_mean"].mean()
-            )
-            < (2 * shift_table_slice["energy_dif_mean"].std())
-        ]
-        .sort_values(by=j_col, ascending=[1])
-        .tail(j_segment_threshold_size)
-    )
-    extrapolate_j_shift_mean = shift_table_final_rows["energy_dif_mean"].mean()
-    extrapolate_j_shift_std = shift_table_final_rows["energy_dif_mean"].std()
-    extrapolate_j_shifts.append(
-        [
-            fit_qn,
-            j_max,
-            extrapolate_j_shift_mean,
-            extrapolate_j_shift_std,
-        ]
-    )
-    return shift_predictions, extrapolate_j_shifts
-
-
 def set_calc_states(
     states: pd.DataFrame,
     states_header: ExoMolStatesHeader,
@@ -1411,11 +1262,15 @@ def set_calc_states(
     unc_v_factor: float = 0.05,
     energy_final_col: str = "energy_final",
     energy_calc_col: str = "energy_calc",
+    energy_dif_col: str = "energy_dif",
 ) -> pd.DataFrame:
     """
-    Updates all states with no assigned source tag to Calculated and estimates their uncertainty with the function
-    :func:`linelisttools.states.estimate_uncertainty`. Currently, only works for diatomic state files given the v
-    scaling in the uncertainty estimator.
+    Updates all states with no assigned source tag to Calculated and estimates their uncertainty. This is done by
+    starting with an initial base calculated uncertainty equal to twice the standard deviation of the absolute values of
+    the known obs.-calc. differences, plus a quantum number dependent uncertainty extraploation calculated using
+    :func:`linelisttools.states.estimate_uncertainty`.
+
+    This currently only works for diatomic state files given the v scaling in the uncertainty estimator.
 
     Args:
         states:           A DataFrame containing all states, those of which without a source_tag set will be updated to
@@ -1425,27 +1280,12 @@ def set_calc_states(
         unc_v_factor:     The uncertainty scale factor for the v term.
         energy_final_col: The string label for the final energy column in states.
         energy_calc_col:  The string label for the calculated energy column in states.
+        energy_dif_col:   The string label for the energy difference column in states.
 
     Returns:
         A DataFrame where all input states without a source tag assigned have been set to Calculated and had their
             uncertainty estimated.
     """
-    # v_limit_states = states.loc[states[source_tag_col] == source_tag_v_limiter, 'state'].unique()
-    # for state in v_limit_states:
-    #     update_v_max = states.loc[(states[source_tag_col] == source_tag_v_limiter)
-    #                               & (states['state'] == state), v_col].max()
-    #     states.loc[(states[source_tag_col].isna()) & (states['state'] == state)
-    #                & (states[v_col] > update_v_max), source_tag_col] = SourceTag.CALCULATED.value
-    # states.loc[(states[source_tag_col].isna()) & (~states['state'].isin(v_limit_states)),
-    #            source_tag_col] = SourceTag.CALCULATED.value
-    # states[energy_final_col] = np.where(states[source_tag_col] == SourceTag.CALCULATED.value,
-    #                                   states[energy_calc_col], states[energy_final_col])
-
-    # The above previous implementation only set states to Calculated if either the electronic state had no marvel
-    # levels, or vibrational bands of electronic states that were beyond the marvel coverage. This was intended to be
-    # agnostic to the order in which states are updated (i.e.: are predicted shifts determined before or after
-    # calculated levels are set) but I feel it makes more sense to ensure this is done as the last step to catch the
-    # remaining states left unchanged.
     states[states_header.source_tag] = np.where(
         states[states_header.source_tag].isna(),
         SourceTag.CALCULATED,
@@ -1457,7 +1297,8 @@ def set_calc_states(
         states[energy_final_col],
     )
     states[states_header.unc] = states.apply(
-        lambda x: estimate_uncertainty(
+        lambda x: (2 * states[energy_dif_col].abs().std())
+        + estimate_uncertainty(
             x[states_header.get_rigorous_qn()],
             x[states_header.vibrational_qn],
             unc_j_factor,
@@ -1492,10 +1333,10 @@ def shift_parity_pairs(
         states_header:       The ExoMolStatesHeader object containing the column mappings for the states file.
         shift_table_qn_cols: The quantum number columns in states that should be grouped on to find the parity shift for
             each J; this list should not include "J".
-        energy_final_col:    The string label for the final energy column in states.
         energy_calc_col:     The string label for the calculated energy column in states.
         energy_obs_col:      The string label for the observed energy column in states.
         energy_dif_col:      The string label for the energy difference column in states.
+        energy_final_col:    The string label for the final energy column in states.
 
     Returns:
         The states DataFrame updated with the mean energy shift from the shift table applied to any parity pair
