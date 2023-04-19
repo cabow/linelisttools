@@ -237,5 +237,5 @@ fabric.properties
 .idea/caches/build_file_checksums.ser
 
 # Project specific directories
-resources/
-tests/outputs/
+tests/outputs/*
+!tests/outputs/.gitkeep
