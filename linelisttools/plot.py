@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .format import SourceTag
+from .states import ExoMolStatesHeader
 
 
 class PlotType(IntEnum):
@@ -140,13 +141,18 @@ def get_state_tex(states: t.List[str]) -> t.Dict:
     """
     states = set(states)
     state_tex_dict = {}
-    state_regex = re.compile(r"([^\W_])(['`]*?)_?(\d)(\w+)([-\+]?)")
+    state_regex = re.compile(r"([^\W_])([p'`]*?)_?(\d)(\w+)([-\+]?)")
+    electronic_shorthand_dict = {"Sig": "Sigma", "Del": "Delta", "Gam": "Gamma"}
     for state in states:
         state_match = state_regex.match(state)
         prime = "\\prime" if state_match.group(2) != "" else ""
         symmetry = state_match.group(5)
+        electronic_state = state_match.group(4).capitalize()
+        if electronic_state in electronic_shorthand_dict.keys():
+            electronic_state = electronic_shorthand_dict.get(electronic_state)
+
         symmetry_str = "^" + symmetry if symmetry != "" else ""
-        state_tex = f"{state_match.group(1)}$^{{{prime}{state_match.group(3)}}}\\{state_match.group(4).capitalize()}{symmetry_str}$"
+        state_tex = f"{state_match.group(1)}$^{{{prime}{state_match.group(3)}}}\\{electronic_state}{symmetry_str}$"
         state_tex_dict[state] = state_tex
     return state_tex_dict
 
@@ -337,12 +343,34 @@ def plot_states_by_source_tag(
     states: pd.DataFrame,
     show: bool = True,
     out_file: str = None,
+    energy_cutoff: float = None,
+    j_cutoff: float = None,
     j_col: str = "J",
     energy_col: str = "energy",
     source_tag_col: str = "source_tag",
     plot_state_list: t.List[str] = None,
     plot_source_list: t.List[t.Union[str, SourceTag]] = None,
 ) -> None:
+    """
+    Plots the contents of the states file, colour coded by their source_tag. Can be restricted to a subset of the
+    possible source_tag values and to a subset of the present electronic states.
+
+    Assumes the states file contains a total parity column.
+
+    Args:
+        states:
+        show:
+        out_file:
+        energy_cutoff:
+        j_col:
+        energy_col:
+        source_tag_col:
+        plot_state_list:
+        plot_source_list:
+
+    Returns:
+
+    """
     if out_file is None and not show:
         raise RuntimeError(
             "No out_file specified and show set to False - nothing to do."
@@ -350,9 +378,50 @@ def plot_states_by_source_tag(
 
     if plot_state_list is None:
         plot_state_list = states["state"].unique()
+    elif (
+        len(missing_states := np.setdiff1d(plot_state_list, states["state"].unique()))
+        != 0
+    ):
+        raise RuntimeWarning(
+            f"Some states specified in plot_state_list do not exist in the states file: {missing_states}"
+        )
 
     if plot_source_list is None:
         plot_source_list = [st.value for st in SourceTag]
+    else:
+        plot_source_list = [
+            st.value if isinstance(st, SourceTag) else st for st in plot_source_list
+        ]
+
+    if energy_cutoff is None:
+        plot_states = states.copy()
+    else:
+        plot_states = states.loc[states["energy"] <= energy_cutoff]
+
+    if j_cutoff is not None:
+        plot_states = plot_states.loc[plot_states["J"] <= j_cutoff]
+
+    if len(plot_states) == 0:
+        raise RuntimeError("No states to plot after applying energy and j cutoffs.")
+
+    for plot_state in plot_state_list:
+        if (
+            len(
+                plot_states.loc[
+                    (plot_states["state"] == plot_state)
+                    & (
+                        plot_states[source_tag_col]
+                        .map(lambda x: x.value)
+                        .isin(plot_source_list)
+                    )
+                ]
+            )
+            == 0
+        ):
+            raise RuntimeError(
+                f"The state {plot_state} has no levels with matching source tags {plot_source_list} to plot"
+                f"{' below the energy/J cutoffs' if energy_cutoff is not None or j_cutoff is not None else ''}."
+            )
 
     state_tex_dict = get_state_tex(states=plot_state_list)
 
@@ -377,23 +446,27 @@ def plot_states_by_source_tag(
     # plot_colour_list = get_qualitative_colors(len(plot_source_list))
 
     fig, axs = plt.subplots(len(plot_state_list), 1, figsize=(10, 20))
+    marker_size = 80
+    marker_line_width = 0.8
     for state_idx, state in enumerate(plot_state_list):
-        state_ax = axs[state_idx]
+        if len(plot_state_list) == 1:
+            state_ax = axs
+        else:
+            state_ax = axs[state_idx]
         data_sets = []
         label_list = []
         for source_idx, source in enumerate(plot_source_list):
-            states_source_slice = states.loc[
-                (states["state"] == state) & (states[source_tag_col] == source),
-                [energy_col, j_col, "parity_norot"],
+            states_source_slice = plot_states.loc[
+                (plot_states["state"] == state)
+                & (plot_states[source_tag_col].map(lambda x: x.value) == source),
+                [energy_col, j_col, "parity_tot"],
             ]
-            marker_size = 80
-            marker_line_width = 0.8
             state_e = state_ax.scatter(
                 states_source_slice.loc[
-                    states_source_slice["parity_norot"] == "e", j_col
+                    states_source_slice["parity_tot"] == "-", j_col
                 ],
                 states_source_slice.loc[
-                    states_source_slice["parity_norot"] == "e", energy_col
+                    states_source_slice["parity_tot"] == "-", energy_col
                 ],
                 marker="x",
                 s=marker_size,
@@ -404,10 +477,10 @@ def plot_states_by_source_tag(
             )
             state_f = state_ax.scatter(
                 states_source_slice.loc[
-                    states_source_slice["parity_norot"] == "f", j_col
+                    states_source_slice["parity_tot"] == "+", j_col
                 ],
                 states_source_slice.loc[
-                    states_source_slice["parity_norot"] == "f", energy_col
+                    states_source_slice["parity_tot"] == "+", energy_col
                 ],
                 marker="+",
                 s=marker_size,
@@ -431,10 +504,8 @@ def plot_states_by_source_tag(
         )
         state_ax.tick_params(axis="x", labelsize=18)
         state_ax.tick_params(axis="y", labelsize=18)
-        if state_idx == 1:
-            # Set y-axis label for middle plot only
-            state_ax.set_ylabel(ylabel="Energy (cm$^{-1}$)", fontsize=18)
-        if state_idx == 2:
+        state_ax.set_ylabel(ylabel="Energy (cm$^{-1}$)", fontsize=18)
+        if state_idx == len(plot_state_list) - 1:
             # Create legend with both + and x markers for both parity in each source
             state_ax.set_xlabel(xlabel=j_col, fontsize=26)
             data_sets = list(np.array(data_sets).T.flatten())
