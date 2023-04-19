@@ -17,9 +17,7 @@ from .format import SourceTag
 from .plot import get_vibrant_colors
 
 
-# TODO: Pass ExoMolStatesHeader in to methods to avoid passing individual column names. Can also be used for formatting
-#  by containing the fortran format mapping.
-#  Also add some way to handle with the resultant energy columns, i.e.: energy_final, etc.
+# TODO: Remove arguments for column names like "energy_dif" so the defaults are used? Seems less confusing.
 class ExoMolStatesHeader:
     """
     Stores the column names of an ExoMol states file. Certain columns are mandatory (ID, Energy, Degeneracy and a
@@ -32,6 +30,8 @@ class ExoMolStatesHeader:
     are isotopologues of one).
     """
 
+    # TODO: Include implicit fortran formats for each column?
+    #  Also add some way to handle with the resultant energy columns, i.e.: energy_final, etc.
     _state_id_default = "id"
     _energy_default = "energy"
     _degeneracy_default = "degeneracy"
@@ -426,10 +426,9 @@ def match_states(
     states_header.default_unc()
     print("STATES MATCHED: \n", states_matched)
     if len(states_matched) == 0:
-        raise RuntimeWarning(
-            "No matching levels found. New levels will be appended to existing set."
+        raise RuntimeError(
+            "No matching levels found. Check your data sets should include some matching levels."
         )
-        # TODO: Change to error, or add input fail_on_no_matches?
 
     energy_calc_col = states_header.energy + suffixes[0]
     energy_obs_col = states_header.energy + suffixes[1]
@@ -531,11 +530,6 @@ def match_states(
 
     states_matched = pd.concat([states_matched, states_calc_to_concat])
 
-    # Create table to provide energy shifts and std (for unc estimates) based on a qn grouping.
-    # shift_table = generate_shift_table(states=levels_matched, shift_table_qn_cols=shift_table_qn_cols,
-    #                                    energy_calc_col=energy_calc_col, energy_obs_col=energy_obs_col,
-    #                                    energy_dif_col=energy_dif_col, unc_col=unc_col)
-
     if overwrite_non_match_qn_cols and len(qn_cols_not_match) > 0:
         for qn_col_not_match in qn_cols_not_match:
             states_matched[qn_col_not_match] = np.where(
@@ -547,198 +541,6 @@ def match_states(
             del states_matched[qn_col_not_match + suffixes[1]]
 
     return states_matched
-
-
-# def match_levels(
-#     levels_initial: pd.DataFrame,
-#     levels_new: pd.DataFrame,
-#     qn_match_cols: t.List[str],
-#     match_source_tag: SourceTag,
-#     levels_new_qn_cols: t.List[str] = None,
-#     suffixes: t.Tuple[str, str] = None,
-#     energy_col: str = "energy",
-#     unc_col: str = "unc",
-#     source_tag_col: str = "source_tag",
-#     id_col: str = "ID",
-#     is_isotopologue_match: bool = False,
-#     overwrite_non_match_qn_cols: bool = False,
-# ) -> pd.DataFrame:
-#     """
-#     This is an old version of match_states that does not use the ExoMolStatesHeader class.
-#
-#     Does passing out the shift_table make things easier or is it too constraining for later processes to use the
-#     predefined grouping from the match quantum numbers? Allow subsequent methods to redo the grouping or is that just
-#     extra room for error/mistakes?
-#
-#     Args:
-#         levels_initial:
-#         levels_new:
-#         qn_match_cols:
-#         match_source_tag:
-#         levels_new_qn_cols:
-#         suffixes:
-#         energy_col:
-#         unc_col:
-#         source_tag_col:
-#         id_col:
-#         is_isotopologue_match:
-#         overwrite_non_match_qn_cols:
-#
-#     Returns:
-#
-#     """
-#     if suffixes is None:
-#         suffixes = ("_calc", "_obs")
-#
-#     if levels_new_qn_cols is None:
-#         levels_new_qn_cols = qn_match_cols
-#
-#     # Take an inner merge to only get the levels that do have matches.
-#     levels_matched = levels_initial.merge(
-#         levels_new,
-#         left_on=qn_match_cols,
-#         right_on=qn_match_cols,
-#         suffixes=suffixes,
-#         how="inner",
-#     )
-#     print("LEVELS MATCHED: \n", levels_matched)
-#     if len(levels_matched) == 0:
-#         raise RuntimeWarning(
-#             "No matching levels found. New levels will be appended to existing set."
-#         )
-#         # TODO: Change to error, or add input fail_on_no_matches?
-#
-#     energy_calc_col = energy_col + suffixes[0]
-#     energy_obs_col = energy_col + suffixes[1]
-#     energy_dif_col = energy_col + "_dif"
-#     energy_dif_mag_col = energy_dif_col + "_mag"
-#
-#     levels_matched[energy_dif_col] = levels_matched.apply(
-#         lambda x: x[energy_obs_col] - x[energy_calc_col], axis=1
-#     )
-#     levels_matched[energy_dif_mag_col] = levels_matched[energy_dif_col].apply(
-#         lambda x: abs(x)
-#     )
-#
-#     # This was bad as it changed the structure of the output DataFrame to be that of the GroupBy frame.
-#     # levels_matched = levels_matched.sort_values(energy_dif_mag_col).groupby(by=qn_match_cols, as_index=False).first()
-#
-#     qn_cols_not_match = np.setdiff1d(levels_new_qn_cols, qn_match_cols)
-#     # If not matching on the full set of quantum numbers that uniquely determine a level, check for duplicates such that
-#     # no more than one level (defined by the input set of quantum numbers qn_match_cols) is matching on the same
-#     # levels_new level.
-#     qn_dupe_cols = (
-#         qn_match_cols
-#         if len(qn_cols_not_match) == 0
-#         else qn_match_cols + [energy_obs_col]
-#     )
-#
-#     levels_matched_dup = levels_matched[
-#         levels_matched.duplicated(subset=qn_dupe_cols, keep=False)
-#     ].sort_values(qn_dupe_cols + [energy_dif_mag_col])
-#
-#     if len(levels_matched_dup) > 0:
-#         # Get the index of the lowest energy_agreement entry, for each tag which has duplicates
-#         levels_matched_dup_idx_min = (
-#             levels_matched_dup.groupby(by=qn_dupe_cols, sort=False)[
-#                 energy_dif_mag_col
-#             ].transform(min)
-#             == levels_matched_dup[energy_dif_mag_col]
-#         )
-#         # Take the index of everything other than the lowest energy_agreement entry for each duplicated tag and remove
-#         # it from the comparison dataframe
-#         levels_matched = levels_matched.drop(
-#             levels_matched_dup[~levels_matched_dup_idx_min].index
-#         )
-#     # levels_matched = levels_matched.sort_values(by=[qn_dupe_cols + [energy_dif_mag_col]]).drop_duplicates(
-#     #     subset=qn_dupe_cols, keep='first')
-#
-#     # Remove the energy difference magnitude column as it is not needed beyond this point.
-#     del levels_matched[energy_dif_mag_col]
-#
-#     # Check the 0 energy level.
-#     zero_energy_level_matches = len(
-#         levels_matched.loc[
-#             (levels_matched[energy_calc_col] == 0)
-#             & (levels_matched[energy_obs_col] == 0)
-#         ]
-#     )
-#     if zero_energy_level_matches != 1:
-#         raise RuntimeError(
-#             "0 ENERGY LEVELS DO NOT MATCH ASSIGNMENTS IN BOTH DATASETS.\nORIGINAL:\n",
-#             levels_matched.loc[levels_matched[energy_calc_col] == 0],
-#             "\nUPDATE:\n",
-#             levels_matched.loc[levels_matched[energy_obs_col] == 0],
-#         )
-#
-#     if not is_isotopologue_match:
-#         # Merge the sets of qn_match_cols in each DataFrame with an indicator to find any rows that are only in
-#         # levels_new to concat them to levels_matched.
-#         levels_new_check_matched = levels_new[qn_match_cols].merge(
-#             levels_matched[qn_match_cols], how="left", indicator=True
-#         )
-#         # Get the indexes of levels_new where the unique qn_match_cols are not yet in levels_matched.
-#         levels_new_to_concat_idx = levels_new_check_matched[
-#             (levels_new_check_matched["_merge"] == "left_only")
-#         ].index
-#         # Isolate only the rows with those indexes to be concatenated.
-#         levels_new_to_concat = levels_new[
-#             levels_new.index.isin(levels_new_to_concat_idx)
-#         ]
-#         # Rename energy_col_name in the rows to be concatenated to energy_obs_col to avoid creating a new column.
-#         levels_new_to_concat = levels_new_to_concat.rename(
-#             columns={energy_col: energy_obs_col}
-#         )
-#         if len(qn_cols_not_match) > 0:
-#             levels_new_to_concat = levels_new_to_concat.rename(
-#                 columns={qn_col: qn_col + suffixes[1] for qn_col in qn_cols_not_match}
-#             )
-#         # levels_matched = levels_matched.append(levels_new_to_append)
-#         levels_matched = pd.concat([levels_matched, levels_new_to_concat])
-#
-#     levels_matched[source_tag_col] = match_source_tag.value
-#     # TODO: Change to rename original column? Or worth keeping both?
-#     levels_matched["energy_final"] = levels_matched[energy_obs_col]
-#
-#     # Rename original levels' energy to match the column name in levels_matched
-#     levels_initial = levels_initial.rename(columns={energy_col: energy_calc_col})
-#     # Add missing original levels that are not in the final matching set
-#     # levels_matched = levels_matched.append(levels_initial.loc[~levels_initial['id'].isin(levels_matched['id'])])
-#     levels_initial_to_concat = levels_initial.loc[
-#         ~levels_initial[id_col].isin(levels_matched[id_col])
-#     ]
-#     if len(qn_cols_not_match) > 0:
-#         levels_initial_to_concat = levels_initial_to_concat.rename(
-#             columns={qn_col: qn_col + suffixes[0] for qn_col in qn_cols_not_match}
-#         )
-#
-#     if (
-#         unc_col in levels_initial_to_concat.columns
-#         and unc_col + suffixes[0] in levels_matched.columns
-#     ):
-#         levels_initial_to_concat = levels_initial_to_concat.rename(
-#             columns={unc_col: unc_col + suffixes[0]}
-#         )
-#
-#     levels_matched = pd.concat([levels_matched, levels_initial_to_concat])
-#
-#     # Create table to provide energy shifts and std (for unc estimates) based on a qn grouping.
-#     # shift_table = generate_shift_table(states=levels_matched, shift_table_qn_cols=shift_table_qn_cols,
-#     #                                    energy_calc_col=energy_calc_col, energy_obs_col=energy_obs_col,
-#     #                                    energy_dif_col=energy_dif_col, unc_col=unc_col)
-#     # print("SHIFT TABLE: \n", shift_table)
-#
-#     if overwrite_non_match_qn_cols and len(qn_cols_not_match) > 0:
-#         for qn_col_not_match in qn_cols_not_match:
-#             levels_matched[qn_col_not_match] = np.where(
-#                 levels_matched[qn_col_not_match + suffixes[1]].isna(),
-#                 levels_matched[qn_col_not_match + suffixes[0]],
-#                 levels_matched[qn_col_not_match + suffixes[1]],
-#             )
-#             del levels_matched[qn_col_not_match + suffixes[0]]
-#             del levels_matched[qn_col_not_match + suffixes[1]]
-#
-#     return levels_matched
 
 
 def generate_shift_table(
@@ -971,8 +773,6 @@ def predict_shifts(
         columns=fit_qn_list
         + [states_header.get_rigorous_qn(), "pe_fit_energy_shift", "pe_fit_unc"],
     )
-    # pe_fit_shifts[fit_qn_list] = pe_fit_shifts["fit_qn"].str.split("|", len(fit_qn_list), expand=True)
-    # del pe_fit_shifts["fit_qn"]
 
     qn_merge_cols = fit_qn_list + [states_header.get_rigorous_qn()]
     states_matched = states_matched.merge(
@@ -1014,8 +814,6 @@ def predict_shifts(
             "pe_extrapolate_energy_shift_std",
         ],
     )
-    # pe_extrapolate_shifts[fit_qn_list] = pe_extrapolate_shifts["fit_qn"].str.split("|", len(fit_qn_list), expand=True)
-    # del pe_extrapolate_shifts["fit_qn"]
 
     states_matched = states_matched.merge(
         pe_extrapolate_shifts, left_on=fit_qn_list, right_on=fit_qn_list, how="left"
@@ -1028,11 +826,6 @@ def predict_shifts(
         states_header.source_tag,
     ] = SourceTag.PS_EXTRAPOLATION
     # Scale unc based on j over j_max.
-    # states_matched['unc'] = states_matched.apply(
-    #     lambda x: scale_uncertainty(std=x['pe_extrapolate_energy_shift_std'], std_scale=2, j_val=x['j'],
-    #                                 j_max=x['j_max'], j_scale=0.05)
-    #     if math.isnan(x['energy_final']) and not math.isnan(x['energy_calc']) and not math.isnan(x['j_max'])
-    #        and x['j'] > x['j_max'] else x['unc'], axis=1)
     states_matched[states_header.unc] = states_matched.apply(
         lambda x: set_predicted_unc(
             std=x["pe_extrapolate_energy_shift_std"],
@@ -1098,14 +891,14 @@ def fit_predictions(
     """
 
     Args:
-        j_segment_threshold_size:
-        j_col:       The String column name for the J column.
-        grouped_data:
+        j_segment_threshold_size: The number of data points on either side of missing data to fit to.
+        j_col:        The String column name for the J column.
+        grouped_data: A tuple containing in the first index the list of quantum numbers the data has been grouped on and
+            in the second the aggregated DataFrame. Intended to be used with a group output by pd.DataFrame.groupby().
 
     Returns:
 
     """
-    # TODO: Why does internal plotting not work well with multithreading - is this a IDE thing?
     shift_predictions = []
     extrapolate_j_shifts = []
     fit_qn_list = tuple(grouped_data[0])
@@ -1177,8 +970,15 @@ def fit_predictions(
                     ]
                 )[..., None]
             )
-            model = HuberRegressor(epsilon=1.35, max_iter=500)
-            model.fit(x_train, y_train.ravel())
+            y_weights = 1 / np.array(
+                df_group.loc[
+                    (df_group[j_col] >= segment_j_lower_limit)
+                    & (df_group[j_col] <= segment_j_upper_limit),
+                    "energy_dif_unc",
+                ]
+            )
+            model = HuberRegressor(epsilon=1.35, max_iter=1000)  # Was max_iter=500
+            model.fit(x_train, y_train.ravel(), sample_weight=y_weights)
 
             model_segment_predictions = model.predict(
                 x_scaler.transform(j_segment[..., None])
@@ -1230,8 +1030,47 @@ def fit_predictions(
             dif_squared_energy = dif_energy**2
             std_energy = np.sqrt(sum(dif_squared_energy) / len(dif_energy))
 
+            # BEGIN TEST
+            # x_vals = np.array(
+            #     df_group.loc[
+            #         (df_group[j_col] >= segment_j_lower_limit)
+            #         & (df_group[j_col] <= segment_j_upper_limit),
+            #         j_col,
+            #     ]
+            # )
+            # x_intercept = np.empty(shape=(len(x_vals), 2), dtype=float)
+            # # # print(x_intercept)
+            # x_intercept[:, 0] = 1
+            # # # print(x_intercept)
+            # x_intercept[:, 1] = x_vals
+            # # print("THING! ", x_intercept)
+            # print(f"DIF ENERGY = {dif_energy}")
+            # residuals_sum_squares = dif_energy.T @ dif_energy
+            # print(f"RESIDUAL SUM SQUARES = {residuals_sum_squares}")
+            # sigma_squared_hat = residuals_sum_squares / (len(x_vals) - 2)
+            # print(f"SIGMA SQUARED HAT = {sigma_squared_hat}")
+            # var_beta_hat = np.linalg.inv(x_intercept.T @ x_intercept) * sigma_squared_hat
+            # print(f"VAR BETA HAT = {var_beta_hat}")
+            # for p_val in range(2):
+            #     print(f"THIS P = {p_val}")
+            #     standard_error = var_beta_hat[p_val, p_val] ** 0.5
+            #     print(f"STANDARD ERROR FOR PARAM {p_val} = {standard_error}")
+            # print(f"intercept = {model.intercept_}, slope = {model.coef_}")
+            # END TEST
+
+            mean_y_error = np.array(
+                df_group.loc[
+                    (df_group[j_col] >= segment_j_lower_limit)
+                    & (df_group[j_col] <= segment_j_upper_limit),
+                    "energy_dif_unc",
+                ]
+            ).mean()
+            prediction_error = std_energy + mean_y_error
+            # print(f"{fit_qn_list}: MEAN STANDARD ERROR = {std_energy}, MEAN ERROR IN Y DATA = {mean_y_error}, PRED ERR: {prediction_error}")
+
             for entry in [
-                fit_qn_list + (j, prediction, std_energy)
+                fit_qn_list
+                + (j, prediction, prediction_error)  # Formerly just std_error
                 for j, prediction in zip(j_segment, list(segment_predictions))
             ]:
                 shift_predictions.append(entry)
@@ -1296,8 +1135,9 @@ def set_calc_states(
         states[energy_calc_col],
         states[energy_final_col],
     )
+    base_calc_unc = 2 * states[energy_dif_col].abs().std()
     states[states_header.unc] = states.apply(
-        lambda x: (2 * states[energy_dif_col].abs().std())
+        lambda x: base_calc_unc
         + estimate_uncertainty(
             x[states_header.get_rigorous_qn()],
             x[states_header.vibrational_qn],

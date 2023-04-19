@@ -238,4 +238,4 @@ fabric.properties
 
 # Project specific directories
 resources/
-tests/outputs
+tests/outputs/

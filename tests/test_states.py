@@ -55,25 +55,9 @@ def test_so_states(
     print(f"Number of Duo states: {len(df_duo)}")
     print("Duo states: \n", df_duo)
 
-    df_marvel = pd.read_csv(
-        so_marvel_energies_file,
-        delim_whitespace=True,
-        names=[
-            "i",
-            "energy",
-            "state",
-            "degeneracy",
-            "J",
-            "parity_tot",
-            "parity_rotless",
-            "v",
-            "Lambda",
-            "Sigma",
-            "Omega",
-            "unc",
-        ],
+    df_marvel = read_marvel_energies(
+        so_marvel_energies_file, qn_list=["state", "v", "Omega", "parity_tot", "J"]
     )
-    df_marvel = df_marvel[["state", "v", "Omega", "parity_tot", "J", "energy", "unc"]]
     print("Marvel levels: \n", df_marvel)
 
     df_match = match_states(
