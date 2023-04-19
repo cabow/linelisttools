@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 
 from .format import SourceTag
-from .states import ExoMolStatesHeader
 
 
 class PlotType(IntEnum):
