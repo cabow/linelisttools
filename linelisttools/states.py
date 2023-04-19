@@ -1030,34 +1030,6 @@ def fit_predictions(
             dif_squared_energy = dif_energy**2
             std_energy = np.sqrt(sum(dif_squared_energy) / len(dif_energy))
 
-            # BEGIN TEST
-            # x_vals = np.array(
-            #     df_group.loc[
-            #         (df_group[j_col] >= segment_j_lower_limit)
-            #         & (df_group[j_col] <= segment_j_upper_limit),
-            #         j_col,
-            #     ]
-            # )
-            # x_intercept = np.empty(shape=(len(x_vals), 2), dtype=float)
-            # # # print(x_intercept)
-            # x_intercept[:, 0] = 1
-            # # # print(x_intercept)
-            # x_intercept[:, 1] = x_vals
-            # # print("THING! ", x_intercept)
-            # print(f"DIF ENERGY = {dif_energy}")
-            # residuals_sum_squares = dif_energy.T @ dif_energy
-            # print(f"RESIDUAL SUM SQUARES = {residuals_sum_squares}")
-            # sigma_squared_hat = residuals_sum_squares / (len(x_vals) - 2)
-            # print(f"SIGMA SQUARED HAT = {sigma_squared_hat}")
-            # var_beta_hat = np.linalg.inv(x_intercept.T @ x_intercept) * sigma_squared_hat
-            # print(f"VAR BETA HAT = {var_beta_hat}")
-            # for p_val in range(2):
-            #     print(f"THIS P = {p_val}")
-            #     standard_error = var_beta_hat[p_val, p_val] ** 0.5
-            #     print(f"STANDARD ERROR FOR PARAM {p_val} = {standard_error}")
-            # print(f"intercept = {model.intercept_}, slope = {model.coef_}")
-            # END TEST
-
             mean_y_error = np.array(
                 df_group.loc[
                     (df_group[j_col] >= segment_j_lower_limit)
@@ -1066,7 +1038,6 @@ def fit_predictions(
                 ]
             ).mean()
             prediction_error = std_energy + mean_y_error
-            # print(f"{fit_qn_list}: MEAN STANDARD ERROR = {std_energy}, MEAN ERROR IN Y DATA = {mean_y_error}, PRED ERR: {prediction_error}")
 
             for entry in [
                 fit_qn_list
@@ -1075,8 +1046,7 @@ def fit_predictions(
             ]:
                 shift_predictions.append(entry)
 
-    # Now take the mean of the last 10 points within 2std and take the mean shift there and apply it to
-    # all later trans.
+    # Now take the mean of the last 10 points within 2std and take the mean shift there and apply it to all later trans.
     shift_table_final_rows = (
         df_group.loc[
             abs(df_group["energy_dif_mean"] - df_group["energy_dif_mean"].mean())
@@ -1097,6 +1067,7 @@ def fit_predictions(
 def set_calc_states(
     states: pd.DataFrame,
     states_header: ExoMolStatesHeader,
+    base_calc_unc: float = None,
     unc_j_factor: float = 0.0001,
     unc_v_factor: float = 0.05,
     energy_final_col: str = "energy_final",
@@ -1105,16 +1076,22 @@ def set_calc_states(
 ) -> pd.DataFrame:
     """
     Updates all states with no assigned source tag to Calculated and estimates their uncertainty. This is done by
-    starting with an initial base calculated uncertainty equal to twice the standard deviation of the absolute values of
-    the known obs.-calc. differences, plus a quantum number dependent uncertainty extraploation calculated using
-    :func:`linelisttools.states.estimate_uncertainty`.
+    starting with an initial base calculated uncertainty and adding a quantum number dependent uncertainty calculated
+    using :func:`linelisttools.states.estimate_uncertainty`.
 
-    This currently only works for diatomic state files given the v scaling in the uncertainty estimator.
+    If no base calculated uncertainty is added, a value equal to twice the standard deviation of the absolute values of
+    the known obs.-calc. differences is used. Other reasonable alternative would be the mean absolute obs.-calc. value,
+    depending on how confident you are in the model.
+
+    This currently only works for diatomic state files given the scaling based on a single vibrational quantum number in
+    the uncertainty estimator.
 
     Args:
         states:           A DataFrame containing all states, those of which without a source_tag set will be updated to
             calculated.
         states_header:    The ExoMolStatesHeader object containing the column mappings for the states file.
+        base_calc_unc:    A base uncertainty to add to all calculated levels before scaling based on v and J quantum
+            numbers.
         unc_j_factor:     The uncertainty scale factor for the J term.
         unc_v_factor:     The uncertainty scale factor for the v term.
         energy_final_col: The string label for the final energy column in states.
@@ -1135,7 +1112,9 @@ def set_calc_states(
         states[energy_calc_col],
         states[energy_final_col],
     )
-    base_calc_unc = 2 * states[energy_dif_col].abs().std()
+    if base_calc_unc is None:
+        base_calc_unc = 2 * states[energy_dif_col].abs().std()
+
     states[states_header.unc] = states.apply(
         lambda x: base_calc_unc
         + estimate_uncertainty(

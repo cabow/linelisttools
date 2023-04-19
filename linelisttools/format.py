@@ -43,8 +43,9 @@ def output_data(
     n_workers: int = 8,
     append: bool = False,
 ) -> None:
-    if "source_tag" in data.columns:
-        data["source_tag"] = data["source_tag"].map(SourceTag.format_output)
+    data_out = data.copy()
+    if "source_tag" in data_out.columns:
+        data_out["source_tag"] = data_out["source_tag"].map(SourceTag.format_output)
 
     worker = functools.partial(format_row, fortran_format_list)
     if append:
@@ -54,16 +55,13 @@ def output_data(
     with open(filename, file_mode, newline="\n") as f, ThreadPoolExecutor(
         max_workers=n_workers
     ) as e:
-        for out_row in e.map(worker, data.itertuples(index=False)):
+        for out_row in e.map(worker, data_out.itertuples(index=False)):
             f.write(out_row + "\n")
 
 
 def format_row(fortran_format_list: t.List, data_row: t.Tuple) -> str:
     out_row = ""
     for i in range(0, len(data_row)):
-        # Below removed - account for spaces between tokens in the format tokens.
-        # if i > 0:
-        #     out_row += " "
         out_row += fortran_format(val=data_row[i], fmt=fortran_format_list[i])
     return out_row
 
@@ -71,7 +69,7 @@ def format_row(fortran_format_list: t.List, data_row: t.Tuple) -> str:
 def fortran_format(val: str, fmt: str) -> str:
     fmt_letter = fmt[0]
     fmt = fmt[1:]
-    if fmt_letter == "a" or (fmt_letter == "i" and pd.isna(val)):
+    if fmt_letter in ["a", "A"] or (fmt_letter in ["i", "I"] and pd.isna(val)):
         if len(fmt) == 0:
             return val
         else:
@@ -84,7 +82,7 @@ def fortran_format(val: str, fmt: str) -> str:
         return "{val:#{fmt}{fmt_letter}}".format(
             val=val, fmt=fmt, fmt_letter=fmt_letter
         )
-    elif fmt_letter == "i":
+    elif fmt_letter in ["i", "I"]:
         val = int(val)
         if "." in fmt:
             fmt_w = int(fmt.split(".")[0])
