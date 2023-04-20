@@ -201,7 +201,7 @@ def plot_state_coverage(
             f"State coverage plot only accepts PlotTypes of {PlotType.EVENT} (default) or {PlotType.VIOLIN}."
         )
 
-    plt.figure(num=None, dpi=800, figsize=(8, 7))
+    plt.figure(dpi=800, figsize=(8, 7))
     label_font_size = 10
 
     if state_list is None:
@@ -222,6 +222,7 @@ def plot_state_coverage(
             for state, config in state_configuration_dict.items()
             if config == plot_config and not state.endswith("_P")
         ]
+        # TODO: Move exclusion of Perturbed (_P, _PE, _PH) states elsewhere - is it needed at this point?
 
         plot_config_ticks = [
             state_configuration_dict.get(state) for state in state_list
@@ -248,10 +249,13 @@ def plot_state_coverage(
             for plot_config in plot_config_list
         }
 
+        config_text_offset = (
+            energies.loc[energies["state"].isin(state_list), energy_col].max() / 12
+        )
         for plot_config in plot_config_list:
             plt.text(
                 plot_config_tick_mid_dict.get(plot_config),
-                -3000,
+                -config_text_offset,  # -3000
                 plot_config,
                 horizontalalignment="center",
                 fontsize=label_font_size,
@@ -278,8 +282,7 @@ def plot_state_coverage(
     state_energies = [
         energies.loc[energies["state"] == state, energy_col] for state in state_list
     ]
-
-    if plot_type is PlotType.EVENT:
+    if plot_type.value is PlotType.EVENT.value:
         config_state_widths = [
             0.02 if len(energies) > 1000 else 0.05 for energies in state_energies
         ]
@@ -291,7 +294,7 @@ def plot_state_coverage(
             colors=plot_colour_list,
             orientation="vertical",
         )
-    elif plot_type is PlotType.VIOLIN:
+    elif plot_type.value is PlotType.VIOLIN.value:
         violin_plot = plt.violinplot(
             state_energies,
             positions=range(0, len(state_energies)),
@@ -302,6 +305,10 @@ def plot_state_coverage(
         for body_idx, body in enumerate(violin_plot["bodies"]):
             body.set_facecolor(plot_colour_list[body_idx])
             body.set_alpha(1.0)
+    else:
+        raise RuntimeError(
+            f"PlotType not recognised; acceptable values are {PlotType.EVENT, PlotType.VIOLIN}"
+        )
 
     state_tex_dict = get_state_tex(states=state_list)
 
