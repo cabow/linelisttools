@@ -6,6 +6,7 @@ from itertools import cycle, islice
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import legend_handler
 
 from .format import SourceTag
 
@@ -144,7 +145,9 @@ def get_state_tex(states: t.List[str]) -> t.Dict:
     electronic_shorthand_dict = {"Sig": "Sigma", "Del": "Delta", "Gam": "Gamma"}
     for state in states:
         state_match = state_regex.match(state)
-        prime = "\\prime" if state_match.group(2) != "" else ""
+        prime = (
+            "\\prime" * len(state_match.group(2)) if state_match.group(2) != "" else ""
+        )
         symmetry = state_match.group(5)
         electronic_state = state_match.group(4).capitalize()
         if electronic_state in electronic_shorthand_dict.keys():
@@ -451,14 +454,44 @@ def plot_states_by_source_tag(
     }
     # plot_colour_list = get_qualitative_colors(len(plot_source_list))
 
-    fig, axs = plt.subplots(len(plot_state_list), 1, figsize=(10, 20))
+    # fig, axs = plt.subplots(len(plot_state_list), 1, figsize=(10, 20))
+
+    subplot_grid_y = int(np.ceil(np.sqrt(len(plot_state_list))))
+    if len(plot_state_list) <= subplot_grid_y * (subplot_grid_y - 1):
+        subplot_grid_x = subplot_grid_y - 1
+    else:
+        subplot_grid_x = subplot_grid_y
+    # fig, axs = plt.subplots(
+    #     subplot_grid_y, subplot_grid_x, figsize=(6 * subplot_grid_x, 4 * subplot_grid_y)
+    # )
+    # if len(plot_state_list) > 1:
+    #     axs = [axis for axis_row in axs for axis in axis_row]
+    #     for remove_axis in axs[len(plot_state_list) :]:
+    #         fig.delaxes(remove_axis)
+    #     axs = axs[: len(plot_state_list)]
+    fig = plt.figure(
+        figsize=(6 * subplot_grid_x, 4 * subplot_grid_y), tight_layout=True
+    )
+    gs = plt.GridSpec(ncols=2 * subplot_grid_x, nrows=subplot_grid_y, figure=fig)
+    axs = []
+    final_row_n_missing = (
+        subplot_grid_y - len(plot_state_list) % subplot_grid_y
+        if len(plot_state_list) < subplot_grid_x * subplot_grid_y
+        else 0
+    )
+    for plot_idx in range(0, len(plot_state_list)):
+        plot_row = int(np.floor(plot_idx / subplot_grid_x))
+        plot_col_n = plot_idx % subplot_grid_x
+        plot_col = 2 * plot_col_n
+        if plot_row == subplot_grid_y - 1:
+            plot_col += final_row_n_missing
+        axs.append(fig.add_subplot(gs[plot_row, plot_col : plot_col + 2]))
+
     marker_size = 80
     marker_line_width = 0.8
     for state_idx, state in enumerate(plot_state_list):
-        if len(plot_state_list) == 1:
-            state_ax = axs
-        else:
-            state_ax = axs[state_idx]
+        state_ax = axs[state_idx]
+
         data_sets = []
         label_list = []
         for source_idx, source in enumerate(plot_source_list):
@@ -496,8 +529,8 @@ def plot_states_by_source_tag(
                 label=f"{source} f",
             )
 
-            data_sets.append([state_e, state_f])
-            label_list.append(["", f"{source_tag_legend_dict.get(source)}"])
+            data_sets.append((state_e, state_f))
+            label_list.append(f"{source_tag_legend_dict.get(source)}")
         state_tex = state_tex_dict.get(state)
         state_ax.text(
             0.05,
@@ -508,36 +541,49 @@ def plot_states_by_source_tag(
             va="center",
             transform=state_ax.transAxes,
         )
-        state_ax.tick_params(axis="x", labelsize=18)
-        state_ax.tick_params(axis="y", labelsize=18)
-        state_ax.set_ylabel(ylabel="Energy (cm$^{-1}$)", fontsize=18)
-        if state_idx == len(plot_state_list) - 1:
-            # Create legend with both + and x markers for both parity in each source
-            state_ax.set_xlabel(xlabel=j_col, fontsize=26)
-            data_sets = list(np.array(data_sets).T.flatten())
-            label_list = list(np.array(label_list).T.flatten())
-            state_ax.legend(
-                handles=data_sets,
-                labels=label_list,
-                loc="lower right",
-                prop={"size": 14},
-                ncol=2,
-                handlelength=0.1,
-                columnspacing=0,
-            )
-    #     Uncomment below if you wish to fiddle with the axes ranges.
-    #     # We only need to set the max J we want to plot up to and then auto-scale the y based on this - can need a bit of
-    #     fiddling to look good.
-    #     x_axis_max_j = plot_coverage_max_j_dict.get(state)
-    #     state_ax.set_xlim(left=-1, right=x_axis_max_j)
-    #     # Round to the nearest 100 above the maximum energy in the J range.
-    #     y_axis_max_energy = int(math.ceil(df_states.loc[(df_states['state'] == state)
-    #                                                     & (df_states['source_tag'].isin(plot_source_list))
-    #                                                     & (df_states['J'] <= x_axis_max_j), 'energy'].max() / 1000)) * 1000
-    #     state_ax.set_ylim(top=y_axis_max_energy)
+        state_ax.tick_params(axis="x", labelsize=12)
+        state_ax.tick_params(axis="y", labelsize=12)
+        state_ax.set_ylabel(ylabel="Energy (cm$^{-1}$)", fontsize=12)
+        state_ax.set_xlabel(xlabel=j_col, fontsize=12)
+        # if state_idx == len(plot_state_list) - 1:
+        # Create legend with both + and x markers for both parity in each source
+        # state_ax.set_xlabel(xlabel=j_col, fontsize=26)
+        # data_sets = list(np.array(data_sets).T.flatten())
+        # label_list = list(np.array(label_list).T.flatten())
+        # state_ax.legend(
+        #     handles=data_sets,
+        #     labels=label_list,
+        #     loc="lower right",
+        #     prop={"size": 14},
+        #     ncol=2,  # Formerly just 2
+        #     handlelength=0.1,
+        #     columnspacing=0,
+        #     handler_map={tuple: legend_handler.HandlerTuple(None)}
+        # )
+
+    # label_list = [labels[1] for labels in label_list]
+    plot_legend = fig.legend(
+        handles=data_sets,
+        labels=label_list,
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.18 / subplot_grid_y),
+        prop={"size": 14},
+        ncol=int(np.ceil(len(data_sets) / 2)),
+        handler_map={tuple: legend_handler.HandlerTuple(ndivide=2, pad=0)},
+    )
+    # Uncomment below if you wish to fiddle with the axes ranges.
+    # # We only need to set the max J we want to plot up to and then auto-scale the y based on this - can need a bit of
+    # fiddling to look good.
+    # x_axis_max_j = plot_coverage_max_j_dict.get(state)
+    # state_ax.set_xlim(left=-1, right=x_axis_max_j)
+    # # Round to the nearest 100 above the maximum energy in the J range.
+    # y_axis_max_energy = int(math.ceil(df_states.loc[(df_states['state'] == state)
+    #                                                 & (df_states['source_tag'].isin(plot_source_list))
+    #                                                 & (df_states['J'] <= x_axis_max_j), 'energy'].max() / 1000)) * 1000
+    # state_ax.set_ylim(top=y_axis_max_energy)
 
     plt.tight_layout()
     if out_file is not None:
-        plt.savefig(out_file)
+        plt.savefig(out_file, bbox_extra_artists=(plot_legend,), bbox_inches="tight")
     if show:
         plt.show()
