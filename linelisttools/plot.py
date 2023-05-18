@@ -18,15 +18,15 @@ class PlotType(IntEnum):
 
 def get_vibrant_colors(n_colors: int) -> t.List[str]:
     vibrant_color_list = [
-        "#0077BB",
-        "#33BBEE",
-        "#009988",
-        "#44EE66",
-        "#FFCC11",
         "#EE7733",
+        "#0077BB",
         "#CC3311",
+        "#33BBEE",
+        "#229933",
         "#EE3377",
+        "#44EE66",
         "#BB33BB",
+        "#FFCC11",
         "#8833EE",
     ]
     if n_colors > len(vibrant_color_list):

@@ -440,9 +440,6 @@ def match_states(
     )
     states_matched[energy_dif_mag_col] = states_matched[energy_dif_col].map(abs)
 
-    # This was bad as it changed the structure of the output DataFrame to be that of the GroupBy frame.
-    # levels_matched = levels_matched.sort_values(energy_dif_mag_col).groupby(by=qn_match_cols, as_index=False).first()
-
     qn_cols_not_match = np.setdiff1d(states_new_qn_cols, qn_match_cols)
     # If not matching on the full set of quantum numbers that uniquely determine a level, check for duplicates such that
     # no more than one level (defined by the input set of quantum numbers qn_match_cols) is matching on the same
@@ -453,7 +450,16 @@ def match_states(
         else qn_match_cols + [energy_obs_col]
     )
 
-    # TODO: Include energy_obs in sort list as this will be the same for any duplicate states_obs joined on?
+    # WIP! See issue above.
+    # if len(qn_cols_not_match) > 0:
+    #     states_matched["rank"] = states_matched.groupby(by=qn_dupe_cols)[
+    #         energy_dif_mag_col
+    #     ].rank(method="dense", ascending=True)
+    #     any_duplicate_primary_match = states_matched.loc[states_matched["rank"] == 1, "id"].duplicated().any()
+    #     if any_duplicate_primary_match:
+    #         # Perform preferential ranked match
+    #         print("TEST!", states_matched)
+
     print(states_matched[qn_dupe_cols + [energy_dif_mag_col]])
     states_matched = states_matched.sort_values(
         by=qn_dupe_cols + [energy_dif_mag_col]
