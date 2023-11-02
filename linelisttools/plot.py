@@ -16,19 +16,33 @@ class PlotType(IntEnum):
     EVENT = 1
 
 
-def get_vibrant_colors(n_colors: int) -> t.List[str]:
-    vibrant_color_list = [
-        "#EE7733",
-        "#0077BB",
-        "#CC3311",
-        "#33BBEE",
-        "#229933",
-        "#EE3377",
-        "#44EE66",
-        "#BB33BB",
-        "#FFCC11",
-        "#8833EE",
-    ]
+def get_vibrant_colors(n_colors: int, ordered: bool = False) -> t.List[str]:
+    if ordered:
+        vibrant_color_list = [
+            "#0077BB",
+            "#33BBEE",
+            "#44EE66",
+            "#229933",
+            "#FFBB11",  # FFCC11
+            "#EE7733",
+            "#CC3311",
+            "#EE3377",
+            "#BB33BB",
+            "#8833EE",
+        ]
+    else:
+        vibrant_color_list = [
+            "#EE7733",
+            "#0077BB",
+            "#CC3311",
+            "#33BBEE",
+            "#229933",
+            "#EE3377",
+            "#44EE66",
+            "#BB33BB",
+            "#FFBB11",  # FFCC11
+            "#8833EE",
+        ]
     if n_colors > len(vibrant_color_list):
         return list(islice(cycle(vibrant_color_list), n_colors))
     else:
@@ -420,7 +434,7 @@ def plot_states_by_source_tag(
                     (plot_states["state"] == plot_state)
                     & (
                         plot_states[source_tag_col]
-                        .map(lambda x: x.value)
+                        # .map(lambda x: x.value)  # TEST
                         .isin(plot_source_list)
                     )
                 ]
@@ -497,7 +511,11 @@ def plot_states_by_source_tag(
         for source_idx, source in enumerate(plot_source_list):
             states_source_slice = plot_states.loc[
                 (plot_states["state"] == state)
-                & (plot_states[source_tag_col].map(lambda x: x.value) == source),
+                & (
+                    plot_states[source_tag_col]
+                    # .map(lambda x: x.value)  # TEST
+                    == source
+                ),
                 [energy_col, j_col, "parity_tot"],
             ]
             state_e = state_ax.scatter(

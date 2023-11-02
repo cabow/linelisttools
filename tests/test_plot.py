@@ -163,7 +163,7 @@ def test_plot_states_by_source_tag(
             j_col,
             "uncertainty",
             "lifetime",
-            "parity",
+            "parity_tot",
             "parity_norot",
             "state",
             "v",
@@ -175,7 +175,7 @@ def test_plot_states_by_source_tag(
     )
     parity_pair_merge_cols = ["state", "v", j_col, "Omega"]
     states_parity_pairs = states.loc[states[source_tag_col] == "PS"].merge(
-        states.loc[states[source_tag_col] == SourceTag.MARVELISED.value],
+        states.loc[states[source_tag_col] == SourceTag.MARVELISED],
         left_on=parity_pair_merge_cols,
         right_on=parity_pair_merge_cols,
         how="inner",

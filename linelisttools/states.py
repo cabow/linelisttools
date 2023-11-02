@@ -14,6 +14,7 @@ from sklearn.preprocessing import StandardScaler
 
 from .concurrence import ExecutorType, yield_grouped_data
 from .format import SourceTag
+from .hyperfine import calc_possible_f_values
 from .plot import get_vibrant_colors
 
 
@@ -659,12 +660,18 @@ def predict_shifts(
     states_matched: pd.DataFrame,
     states_header: ExoMolStatesHeader,
     fit_qn_list: t.List[str],
+    nuclear_spin: float = None,
     j_segment_threshold_size: int = 14,
+    outlier_sigma_threshold: float = 3,
+    do_extrapolation: bool = True,
     show_plot: bool = False,
     plot_states: t.List[str] = None,
     energy_calc_col: str = "energy_calc",
     energy_obs_col: str = "energy_obs",
     energy_dif_col: str = "energy_dif",
+    energy_out_col: str = "energy_final",
+    unc_obs_col: str = "unc_obs",
+    unc_out_col: str = "unc_final",
     executor_type: ExecutorType = ExecutorType.THREADS,
     n_workers: int = 8,
 ) -> pd.DataFrame:
@@ -689,15 +696,23 @@ def predict_shifts(
         fit_qn_list:              The list of arbitrary quantum numbers to group the obs.-calc. trends on for fitting.
             Generally should be the same as those used to generate the shift table. All quantum numbers must exist as
              columns within the shift_table and levels_matched DataFrames.
+        nuclear_spin:             The nuclear spin of the molecule. Turns on hyperfine fitting is non-zero.
         j_segment_threshold_size: The minimum number of J data-points that must be present in a given segment to fit to.
             The segments that obs.-calc. predictions are fit to will increase in size if multiple sets of missing data
             exist within an array of sequential J values of length equal to this argument.
+        outlier_sigma_threshold:  The standard deviation value outside which outliers are ignored when taking the mean
+            uncertainty in data points for predicted shift final uncertainty estimates.
+        do_extrapolation:         A boolean controllign whether predicted shift extrapolation is performed.
         show_plot:                Determines whether plots of the input and fitted data are shown.
         plot_states:              The text labels indicating which states plots should be shown for, when show_plot is
             True.
         energy_calc_col:          The string column name for the calculated energy column in states_matched.
         energy_obs_col:           The string column name for the observed energy column in states_matched
         energy_dif_col:           The string column name for the energy difference column in states_matched
+        energy_out_col:           The string column name for the final energy, corrected with predicted shifts to be
+            output to.
+        unc_obs_col:              The string column name for the observed uncertainty column in states_matched.
+        unc_out_col:              The string column name for the predicted shift uncertainty to be output to.
         executor_type:            Determines whether the fitting will be carried out with multiple threads or processes.
             Defaults to multithreading.
         n_workers:                The number of threads/processes to concurrently execute for the fitting.
@@ -708,46 +723,102 @@ def predict_shifts(
     """
 
     shift_predictions = []
-    extrapolate_j_shifts = []
+    extrapolate_shifts = []
 
-    worker = functools.partial(
-        fit_predictions,
-        j_segment_threshold_size,
-        states_header.get_rigorous_qn(),
-    )
-    shift_groups = generate_fit_groups(
-        states=states_matched,
-        fit_qn_list=fit_qn_list,
-        fit_x_col=states_header.get_rigorous_qn(),
-        energy_calc_col=energy_calc_col,
-        energy_obs_col=energy_obs_col,
-        energy_dif_col=energy_dif_col,
-        unc_col=states_header.unc,
-    )
+    if nuclear_spin is not None and nuclear_spin != 0:
+        is_hyperfit = True
+        shift_group_cols = fit_qn_list + ["F", "J", energy_dif_col, unc_obs_col]
+        worker = functools.partial(
+            fit_predictions_hf,
+            j_segment_threshold_size,
+            "F",
+            "J",
+            energy_dif_col,
+            unc_obs_col,
+            outlier_sigma_threshold,
+            nuclear_spin,
+        )
+    else:
+        is_hyperfit = False
+        shift_group_cols = fit_qn_list + ["J", energy_dif_col, unc_obs_col]
+        worker = functools.partial(
+            fit_predictions,
+            j_segment_threshold_size,
+            states_header.get_rigorous_qn(),
+            energy_dif_col,
+            unc_obs_col,
+            outlier_sigma_threshold,
+        )
+
+    shift_groups = states_matched.loc[
+        (~states_matched[energy_calc_col].isna())
+        & (~states_matched[energy_obs_col].isna()),
+        shift_group_cols,
+    ].groupby(by=fit_qn_list, as_index=False)
 
     with executor_type.value(max_workers=n_workers) as e:
         for result in tqdm.tqdm(
             e.map(worker, yield_grouped_data(shift_groups)), total=len(shift_groups)
         ):
             shift_predictions.append(result[0])
-            extrapolate_j_shifts.append(result[1])
+            extrapolate_shifts.append(result[1])
 
     if show_plot:
+        state_colours = get_vibrant_colors(
+            n_colors=len(states_matched["state"].unique()), ordered=True
+        )
+        state_colour_dict = {
+            state_label: state_colours[state_idx]
+            for state_idx, state_label in enumerate(
+                list(states_matched["state"].unique())
+            )
+        }
         for fit_idx, fitted_group_data in enumerate(yield_grouped_data(shift_groups)):
             # Plot if shifts were calculated and either no plot_states specified or fitted state in plot_states.
             if len(shift_predictions[fit_idx]) != 0 and (
                 plot_states is None
                 or fitted_group_data[0][fit_qn_list.index("state")] in plot_states
             ):
+                plt.figure(figsize=(10, 7))
+                plot_data = fitted_group_data[1]
+                if is_hyperfit:
+                    hf_offset_colours = get_vibrant_colors(
+                        n_colors=int(2 * nuclear_spin + 1), ordered=True
+                    )
+                    plot_edgecolors = [
+                        hf_offset_colours[int(f_val - j_val + nuclear_spin)]
+                        for f_val, j_val in plot_data[["F", "J"]].values
+                    ]
+                    plot_facecolors = [
+                        hf_offset_colours[
+                            int(
+                                prediction[len(fitted_group_data[0])]
+                                - prediction[len(fitted_group_data[0]) + 1]
+                                + nuclear_spin
+                            )
+                        ]
+                        for prediction in shift_predictions[fit_idx]
+                    ]
+                else:
+                    plot_edgecolors = state_colour_dict.get(
+                        fitted_group_data[0][fit_qn_list.index("state")]
+                    )
+                    plot_facecolors = state_colour_dict.get(
+                        fitted_group_data[0][fit_qn_list.index("state")]
+                    )
+                # Plot the original data
                 plt.scatter(
-                    fitted_group_data[1][states_header.get_rigorous_qn()],
-                    fitted_group_data[1]["energy_dif_mean"],
-                    marker="x",
-                    linewidth=0.5,
-                    facecolors=get_vibrant_colors(1),
+                    plot_data[states_header.get_rigorous_qn()],
+                    plot_data[energy_dif_col],
+                    marker="o",
+                    s=20,
+                    linewidth=1,
+                    facecolors="None",
+                    edgecolors=plot_edgecolors,
                     label=" ".join(str(qn) for qn in fitted_group_data[0]),
-                    zorder=1,
+                    zorder=2,
                 )
+                # Plot the predicted values
                 plt.scatter(
                     [
                         prediction[len(fitted_group_data[0])]
@@ -758,155 +829,466 @@ def predict_shifts(
                         for prediction in shift_predictions[fit_idx]
                     ],
                     marker="^",
+                    s=15,
                     linewidth=0.5,
                     edgecolors="#000000",
-                    facecolors="none",
+                    facecolors=plot_facecolors,
                     label=f"{' '.join(str(qn) for qn in fitted_group_data[0])} FIT",
-                    zorder=2,
+                    zorder=3,
                 )
+                # Plot the prediction error bars
+                for pred_error in shift_predictions[fit_idx]:
+                    if is_hyperfit:
+                        plot_errorbarcolors = hf_offset_colours[
+                            int(
+                                pred_error[len(fitted_group_data[0])]
+                                - pred_error[len(fitted_group_data[0]) + 1]
+                                + nuclear_spin
+                            )
+                        ]
+                    else:
+                        plot_errorbarcolors = state_colour_dict.get(
+                            fitted_group_data[0][fit_qn_list.index("state")]
+                        )
+                    plt.errorbar(
+                        pred_error[len(fitted_group_data[0])],
+                        pred_error[len(fitted_group_data[0]) + 2],
+                        yerr=pred_error[len(fitted_group_data[0]) + 3],
+                        c=plot_errorbarcolors,
+                        linestyle="None",
+                        capsize=5,
+                        zorder=1,
+                    )
+
                 plt.legend(loc="best", prop={"size": 10})
                 plt.xlabel(xlabel=states_header.get_rigorous_qn())
-                plt.ylabel(ylabel=r"Obs.-Calc. (cm-1)")
+                plt.ylabel(ylabel=r"Obs.-Calc. (cm$^{-1}$)")
                 plt.tight_layout()
                 plt.show()
 
     shift_predictions = [item for items in shift_predictions for item in items]
-    extrapolate_j_shifts = [item for items in extrapolate_j_shifts for item in items]
+    extrapolate_shifts = [item for items in extrapolate_shifts for item in items]
+
+    if energy_out_col not in states_matched.columns:
+        states_matched[energy_out_col] = np.nan
+
+    if unc_out_col not in states_matched.columns:
+        states_matched[unc_out_col] = np.nan
+
+    if is_hyperfit:
+        prediction_qn_cols = ["F", "J"]
+    else:
+        prediction_qn_cols = ["J"]
 
     # Update energies with shift predictions:
     pe_fit_shifts = pd.DataFrame(
         data=shift_predictions,
         columns=fit_qn_list
-        + [states_header.get_rigorous_qn(), "pe_fit_energy_shift", "pe_fit_unc"],
+        + prediction_qn_cols
+        + ["pe_fit_energy_shift", "pe_fit_unc"],
     )
 
-    qn_merge_cols = fit_qn_list + [states_header.get_rigorous_qn()]
+    qn_merge_cols = fit_qn_list + prediction_qn_cols
     states_matched = states_matched.merge(
         pe_fit_shifts, left_on=qn_merge_cols, right_on=qn_merge_cols, how="left"
     )
+
     states_matched.loc[
-        (states_matched["energy_final"].isna())
+        (states_matched[energy_out_col].isna())
         & (~states_matched["pe_fit_energy_shift"].isna())
-        & (~states_matched["energy_calc"].isna()),
+        & (~states_matched[energy_calc_col].isna()),
         states_header.source_tag,
     ] = SourceTag.PS_LINEAR_REGRESSION
-    states_matched[states_header.unc] = np.where(
+    states_matched[unc_out_col] = np.where(
         states_matched[states_header.source_tag] == SourceTag.PS_LINEAR_REGRESSION,
         states_matched["pe_fit_unc"],
-        states_matched[states_header.unc],
+        states_matched[unc_out_col],
     )
-    states_matched["energy_final"] = np.where(
+    states_matched[energy_out_col] = np.where(
         states_matched[states_header.source_tag] == SourceTag.PS_LINEAR_REGRESSION,
-        states_matched["energy_calc"] + states_matched["pe_fit_energy_shift"],
-        states_matched["energy_final"],
+        states_matched[energy_calc_col] + states_matched["pe_fit_energy_shift"],
+        states_matched[energy_out_col],
     )
-    del states_matched["pe_fit_energy_shift"]
-    del states_matched["pe_fit_unc"]
+    states_matched = states_matched.drop(columns=["pe_fit_energy_shift", "pe_fit_unc"])
     print(
         "PS_2: \n",
         states_matched.loc[
             states_matched[states_header.source_tag] == SourceTag.PS_LINEAR_REGRESSION
         ],
     )
-
-    # Update energies with higher-J shift extrapolations:
-    j_max_col = states_header.get_rigorous_qn() + "_max"
-    pe_extrapolate_shifts = pd.DataFrame(
-        data=extrapolate_j_shifts,
-        columns=fit_qn_list
-        + [
-            j_max_col,
-            "pe_extrapolate_energy_shift",
-            "pe_extrapolate_energy_shift_std",
-        ],
-    )
-
-    states_matched = states_matched.merge(
-        pe_extrapolate_shifts, left_on=fit_qn_list, right_on=fit_qn_list, how="left"
-    )
-    states_matched.loc[
-        (states_matched["energy_final"].isna())
-        & (~states_matched[j_max_col].isna())
-        & (~states_matched["energy_calc"].isna())
-        & (states_matched[states_header.get_rigorous_qn()] > states_matched[j_max_col]),
-        states_header.source_tag,
-    ] = SourceTag.PS_EXTRAPOLATION
-    # Scale unc based on j over j_max.
-    states_matched[states_header.unc] = states_matched.apply(
-        lambda x: set_predicted_unc(
-            std=x["pe_extrapolate_energy_shift_std"],
-            j_factor=0.0001,
-            v_factor=0.05,
-            j_val=x[states_header.get_rigorous_qn()],
-            j_max=x[j_max_col],
+    if do_extrapolation:
+        # Update energies with higher-J shift extrapolations:
+        if is_hyperfit:
+            extrapolate_shift_cols = ["F_max", "F-J"]
+            extrapolate_max_col = "F_max"
+            states_matched["F-J"] = states_matched["F"] - states_matched["J"]
+            extrapolate_qn_list = fit_qn_list + ["F-J"]
+        else:
+            extrapolate_shift_cols = ["J_max"]
+            extrapolate_max_col = "J_max"
+            extrapolate_qn_list = fit_qn_list
+        pe_extrapolate_shifts = pd.DataFrame(
+            data=extrapolate_shifts,
+            columns=fit_qn_list
+            + extrapolate_shift_cols
+            + [
+                "pe_extrapolate_energy_shift",
+                "pe_extrapolate_energy_shift_std",
+            ],
         )
-        if x[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION
-        else x[states_header.unc],
-        axis=1,
-    )
-    states_matched["energy_final"] = np.where(
-        states_matched[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION,
-        states_matched["energy_calc"] + states_matched["pe_extrapolate_energy_shift"],
-        states_matched["energy_final"],
-    )
-    del states_matched[j_max_col]
-    del states_matched["pe_extrapolate_energy_shift"]
-    del states_matched["pe_extrapolate_energy_shift_std"]
-    print(
-        "PS_3: \n",
-        states_matched.loc[
-            states_matched[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION
-        ],
-    )
 
-    # UNNECESSARY IF NOT OUTPUTTING THESE DATAFRAMES.
-    # Add shift predictions to shift table.
-    # What to do when unc = NaN?
-    # shift_table_full_j = shift_table.copy()
-    # shift_table_full_j = shift_table_full_j.rename(
-    #     columns={
-    #         "energy_dif_mean": "energy_shift",
-    #         "energy_dif_std": "energy_shift_unc",
-    #     }
-    # )
-    # pe_fit_shifts = pe_fit_shifts.rename(
-    #     columns={
-    #         "pe_fit_energy_shift": "energy_shift",
-    #         "pe_fit_unc": "energy_shift_unc",
-    #     }
-    # )
-    # shift_table_full_j = shift_table_full_j.append(pe_fit_shifts)
-    # shift_table_full_j = shift_table_full_j.sort_values(
-    #     by=["state", "v", "Omega", j_col], ascending=[1, 1, 1, 1]
-    # )
-    #
-    # pe_extrapolate_shifts = pe_extrapolate_shifts.rename(
-    #     columns={
-    #         "pe_extrapolate_energy_shift": "extrapolation_energy_shift",
-    #         "pe_extrapolate_energy_shift_std": "extrapolation_energy_unc",
-    #     }
-    # )
+        states_matched = states_matched.merge(
+            pe_extrapolate_shifts,
+            left_on=extrapolate_qn_list,
+            right_on=extrapolate_qn_list,
+            how="left",
+        )
+        states_matched.loc[
+            (states_matched[energy_out_col].isna())
+            & (~states_matched[extrapolate_max_col].isna())
+            & (~states_matched[energy_calc_col].isna())
+            & (
+                states_matched[states_header.get_rigorous_qn()]
+                > states_matched[extrapolate_max_col]
+            ),
+            states_header.source_tag,
+        ] = SourceTag.PS_EXTRAPOLATION
+        # Scale unc based on F/J over F/J_max
+        states_matched[unc_out_col] = states_matched.apply(
+            lambda x: set_predicted_unc(
+                std=x["pe_extrapolate_energy_shift_std"],
+                j_factor=0.0001,
+                v_factor=0.05,
+                j_val=x[states_header.get_rigorous_qn()],
+                j_max=x[extrapolate_max_col],
+            )
+            if x[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION
+            else x[unc_out_col],
+            axis=1,
+        )
+        states_matched[energy_out_col] = np.where(
+            states_matched[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION,
+            states_matched[energy_calc_col]
+            + states_matched["pe_extrapolate_energy_shift"],
+            states_matched[energy_out_col],
+        )
+
+        if is_hyperfit:
+            states_matched = states_matched.drop(
+                columns=[
+                    extrapolate_max_col,
+                    "F-J",
+                    "pe_extrapolate_energy_shift",
+                    "pe_extrapolate_energy_shift_std",
+                ]
+            )
+        else:
+            states_matched = states_matched.drop(
+                columns=[
+                    extrapolate_max_col,
+                    "pe_extrapolate_energy_shift",
+                    "pe_extrapolate_energy_shift_std",
+                ]
+            )
+        print(
+            "PS_3: \n",
+            states_matched.loc[
+                states_matched[states_header.source_tag] == SourceTag.PS_EXTRAPOLATION
+            ],
+        )
+
     return states_matched
+
+
+def fit_predictions_hf(
+    segment_threshold_size: int,
+    f_col: str,
+    j_col: str,
+    energy_dif_col: str,
+    unc_obs_col: str,
+    outlier_sigma_threshold: float,
+    nuclear_spin: float,
+    grouped_data: t.Tuple[t.List[str], pd.DataFrame],
+) -> t.Tuple[t.List[tuple], t.List[tuple]]:
+    """
+
+    Args:
+        segment_threshold_size:   The number of data points on either side of missing data to fit to.
+        f_col:                    The String column name for the F column.
+        j_col:                    The String column name for the J column.
+        energy_dif_col:           The String column name for the column containing the obs.-calc. energy values.
+        unc_obs_col:              The String column name for the column containing the uncertainty on the obs. energies.
+        outlier_sigma_threshold:  The standard deviation value outside which outliers are ignored when taking the mean
+            uncertainty in data points for predicted shift final uncertainty estimates.
+        nuclear_spin:             The value of the nuclear spin quantum number, I, for the molecule corresponding to the
+            states file being fit.
+        grouped_data:             A tuple containing in the first index the list of quantum numbers the data has been
+            grouped on and in the second the aggregated DataFrame. Intended to be used with a group output by
+            pd.DataFrame.groupby().
+
+    Returns:
+
+    """
+    shift_predictions = []
+    extrapolate_shifts = []
+    fit_qn_list = tuple(grouped_data[0])
+    df_group = grouped_data[1]
+
+    # f_min = df_group[f_col].min()
+    f_max = df_group[f_col].max()
+    # j_min = df_group[j_col].min()
+    j_max = df_group[j_col].max()
+
+    f_is_integer = (2 * f_max) % 2 == 0
+    if f_is_integer:
+        min_allowed_f = 0
+        # f_coverage_to_max = range(min_allowed_f, int(f_max) + 1)
+    else:
+        min_allowed_f = 0.5
+        # f_coverage_to_max = [x / 2 for x in range(1, int(f_max * 2), 2)]
+
+    j_is_integer = (2 * j_max) % 2 == 0
+    if j_is_integer:
+        min_allowed_j = 0
+        j_coverage_to_max = range(min_allowed_j, int(f_max + nuclear_spin) + 1)
+    else:
+        min_allowed_j = 0.5
+        j_coverage_to_max = [
+            x / 2
+            for x in range(
+                int(min_allowed_j * 2), int((f_max + 1 + nuclear_spin) * 2), 2
+            )
+        ]
+    missing_fj = np.array(
+        sorted(
+            [
+                [f_val, j_val, f_val - j_val]
+                for j_val in j_coverage_to_max
+                for f_val in calc_possible_f_values(
+                    nuclear_spin=nuclear_spin, j_value=j_val
+                )
+                if f_val <= f_max
+                and len(
+                    df_group.loc[
+                        (df_group[f_col] == f_val) & (df_group[j_col] == j_val)
+                    ]
+                )
+                == 0
+            ],
+            key=lambda x: x[0],
+        )
+    )
+    # TODO: This generates FJ pairs that do not exist for cases where |Omega| > 0.5, i.e. for spin-orbit components
+    #  where the minimum allowed J is not the global minimum possible J. It doesn't then create energy values in the
+    #  states file, just generates predictions that F/J combination which can be confusing.
+    if len(missing_fj) > 0:
+        present_hf_components = set([fj_list[2] for fj_list in missing_fj])
+        for hf_component in present_hf_components:
+            hf_component_missing_fj = np.array(
+                [fj_list for fj_list in missing_fj if fj_list[2] == hf_component]
+            )
+            missing_f = np.array([fj_list[0] for fj_list in hf_component_missing_fj])
+            delta_missing_f = np.abs(missing_f[1:] - missing_f[:-1])
+            split_idx = np.where(delta_missing_f >= segment_threshold_size)[0] + 1
+            missing_fj_segments = np.array_split(hf_component_missing_fj, split_idx)
+
+            for fj_segment in missing_fj_segments:
+                # If the segment is entirely within the slice then the wing size is half the threshold.
+                fj_segment = np.array([fj_list[0:2] for fj_list in fj_segment])
+                f_segment = np.array([fj_list[0] for fj_list in fj_segment])
+                if (
+                    min(f_segment) > df_group[f_col].min()
+                    and max(f_segment) < df_group[f_col].max()
+                ):
+                    segment_wing_size = int(segment_threshold_size / 2)
+                else:
+                    segment_wing_size = int(segment_threshold_size)
+
+                segment_f_lower_limit = max(
+                    min_allowed_f, min(f_segment) - segment_wing_size
+                )
+                segment_f_upper_limit = max(
+                    segment_threshold_size + min_allowed_f,
+                    max(f_segment) + segment_wing_size,
+                )
+
+                # Huber regression - resist outliers.
+                x_scaler, y_scaler = StandardScaler(), StandardScaler()
+                if (
+                    len(
+                        df_group.loc[
+                            (df_group[f_col] >= segment_f_lower_limit)
+                            & (df_group[f_col] <= segment_f_upper_limit)
+                            & (df_group[f_col] - df_group[j_col] == hf_component),
+                            [f_col, j_col],
+                        ].values
+                    )
+                    == 0
+                ):
+                    print(
+                        f"No samples found for group {fit_qn_list} in hf component {hf_component} in segment range"
+                        f" {segment_f_lower_limit} <= F <= {segment_f_upper_limit}"
+                    )
+                    break
+                x_train = x_scaler.fit_transform(
+                    df_group.loc[
+                        (df_group[f_col] >= segment_f_lower_limit)
+                        & (df_group[f_col] <= segment_f_upper_limit)
+                        & (df_group[f_col] - df_group[j_col] == hf_component),
+                        [f_col, j_col],
+                    ].values
+                )
+                y_train = y_scaler.fit_transform(
+                    np.array(
+                        df_group.loc[
+                            (df_group[f_col] >= segment_f_lower_limit)
+                            & (df_group[f_col] <= segment_f_upper_limit)
+                            & (df_group[f_col] - df_group[j_col] == hf_component),
+                            energy_dif_col,
+                        ]
+                    )[..., None]
+                )
+                y_weights = 1 / np.array(
+                    df_group.loc[
+                        (df_group[f_col] >= segment_f_lower_limit)
+                        & (df_group[f_col] <= segment_f_upper_limit)
+                        & (df_group[f_col] - df_group[j_col] == hf_component),
+                        unc_obs_col,
+                    ]
+                )
+                model = HuberRegressor(epsilon=1.35, max_iter=1000)
+                # model = SVR(kernel="rbf", degree=2, tol=1e-5, C=1)  # better than others
+                model.fit(x_train, y_train.ravel(), sample_weight=y_weights)
+
+                model_segment_predictions = model.predict(
+                    x_scaler.transform(fj_segment)
+                ).reshape(-1, 1)
+                segment_predictions = y_scaler.inverse_transform(
+                    model_segment_predictions
+                ).ravel()
+                # Find the J we are making predictions for that we also have known energy_dif values for.
+                segment_fj_in_slice_no_outliers = df_group.loc[
+                    (df_group[f_col] >= segment_f_lower_limit)
+                    & (df_group[f_col] <= segment_f_upper_limit)
+                    & (df_group[f_col] - df_group[j_col] == hf_component)
+                    & (
+                        abs(df_group[energy_dif_col] - df_group[energy_dif_col].mean())
+                        <= (outlier_sigma_threshold * df_group[energy_dif_col].std())
+                    ),
+                    [f_col, j_col],
+                ].values
+                real_energy = df_group.loc[
+                    (df_group[f_col] >= segment_f_lower_limit)
+                    & (df_group[f_col] <= segment_f_upper_limit)
+                    & (df_group[f_col] - df_group[j_col] == hf_component)
+                    & (
+                        abs(df_group[energy_dif_col] - df_group[energy_dif_col].mean())
+                        <= (outlier_sigma_threshold * df_group[energy_dif_col].std())
+                    ),
+                    energy_dif_col,
+                ].values
+
+                model_present_predictions = model.predict(
+                    x_scaler.transform(segment_fj_in_slice_no_outliers)
+                ).reshape(-1, 1)
+                present_predictions = y_scaler.inverse_transform(
+                    model_present_predictions
+                ).ravel()
+
+                dif_energy = real_energy - present_predictions
+                dif_squared_energy = dif_energy**2
+                std_energy = np.sqrt(sum(dif_squared_energy) / len(dif_energy))
+
+                mean_y_error = np.array(
+                    df_group.loc[
+                        (df_group[f_col] >= segment_f_lower_limit)
+                        & (df_group[f_col] <= segment_f_upper_limit)
+                        & (df_group[f_col] - df_group[j_col] == hf_component),
+                        unc_obs_col,
+                    ]
+                ).mean()
+                prediction_error = std_energy + mean_y_error
+
+                for entry in [
+                    fit_qn_list
+                    + (
+                        f_val,
+                        j_val,
+                        prediction,
+                        prediction_error,
+                    )  # Formerly just std_error
+                    for f_val, j_val, prediction in zip(
+                        *fj_segment.T, list(segment_predictions)
+                    )
+                ]:
+                    shift_predictions.append(entry)
+
+    # Now take the mean shift of the last N=segment_threshold_size points within 2std and use it to extrapolate the
+    # shift to levels above the F_max cutoff of each component.
+    def component_final_shifts(energy_dif_f_slice: pd.Series) -> pd.Series:
+        energy_dif_f_slice = (
+            energy_dif_f_slice.loc[
+                abs(
+                    energy_dif_f_slice[energy_dif_col]
+                    - energy_dif_f_slice[energy_dif_col].mean()
+                )
+                < (2 * energy_dif_f_slice[energy_dif_col].std())
+            ]
+            .sort_values(by=f_col, ascending=[1])
+            .tail(segment_threshold_size)
+        )
+        return pd.Series(
+            [
+                energy_dif_f_slice[energy_dif_col].mean(),
+                energy_dif_f_slice[energy_dif_col].std(),
+            ],
+            index=["mean", "std"],
+            # {"mean": energy_dif_f_slice[energy_dif_col].mean(), "std": energy_dif_f_slice[energy_dif_col].std()}
+        )
+
+    shift_table_final_rows = df_group.copy()
+    shift_table_final_rows["F-J"] = (
+        shift_table_final_rows[f_col] - shift_table_final_rows[j_col]
+    )
+    shift_table_final_rows = shift_table_final_rows.groupby(
+        by=["F-J"], as_index=False
+    ).apply(lambda x: component_final_shifts(x[[energy_dif_col, f_col]]))
+    for component_shift in shift_table_final_rows.itertuples(index=False):
+        extrapolate_shifts.append(
+            fit_qn_list
+            + (f_max, component_shift[0], component_shift[1], component_shift[2])
+            # qn_list, F_max, F-J, energy_shift_mean, energy_shift_std
+        )
+
+    return shift_predictions, extrapolate_shifts
 
 
 def fit_predictions(
     j_segment_threshold_size: int,
     j_col: str,
+    energy_dif_col: str,
+    unc_obs_col: str,
+    outlier_sigma_threshold: float,
     grouped_data: t.Tuple[t.List[str], pd.DataFrame],
 ) -> t.Tuple[t.List[tuple], t.List[tuple]]:
     """
 
     Args:
         j_segment_threshold_size: The number of data points on either side of missing data to fit to.
-        j_col:        The String column name for the J column.
-        grouped_data: A tuple containing in the first index the list of quantum numbers the data has been grouped on and
-            in the second the aggregated DataFrame. Intended to be used with a group output by pd.DataFrame.groupby().
+        j_col:                    The String column name for the J column.
+        energy_dif_col:           The String column name for the column containing the obs.-calc. energy values.
+        unc_obs_col:              The String column name for the column containing the uncertainty on the obs. energies.
+        outlier_sigma_threshold:  The standard deviation value outside which outliers are ignored when taking the mean
+            uncertainty in data points for predicted shift final uncertainty estimates.
+        grouped_data:             A tuple containing in the first index the list of quantum numbers the data has been
+            grouped on and in the second the aggregated DataFrame. Intended to be used with a group output by
+            pd.DataFrame.groupby().
 
     Returns:
 
     """
     shift_predictions = []
-    extrapolate_j_shifts = []
+    extrapolate_shifts = []
     fit_qn_list = tuple(grouped_data[0])
     df_group = grouped_data[1]
 
@@ -920,6 +1302,7 @@ def fit_predictions(
     else:
         min_allowed_j = 0.5
         j_coverage_to_max = [x / 2 for x in range(1, int(j_max * 2), 2)]
+
     missing_j = np.array(np.setdiff1d(j_coverage_to_max, df_group[j_col]))
     if len(missing_j) > 0:
         delta_missing_j = np.abs(missing_j[1:] - missing_j[:-1])
@@ -943,36 +1326,44 @@ def fit_predictions(
                 j_segment_threshold_size + min_allowed_j,
                 max(j_segment) + segment_wing_size,
             )
-            if j_is_integer:
-                segment_j_coverage = range(
-                    int(segment_j_lower_limit), int(segment_j_upper_limit) + 1
-                )
-            else:
-                segment_j_coverage = [
-                    x / 2
-                    for x in range(
-                        int(segment_j_lower_limit * 2),
-                        int((segment_j_upper_limit + 1) * 2),
-                        2,
-                    )
-                ]
+            # if j_is_integer:
+            #     segment_j_coverage = range(
+            #         int(segment_j_lower_limit), int(segment_j_upper_limit) + 1
+            #     )
+            # else:
+            #     segment_j_coverage = [
+            #         x / 2
+            #         for x in range(
+            #             int(segment_j_lower_limit * 2),
+            #             int((segment_j_upper_limit + 1) * 2),
+            #             2,
+            #         )
+            #     ]
+
             # Huber regression - resist outliers.
             x_scaler, y_scaler = StandardScaler(), StandardScaler()
+            # x_train = x_scaler.fit_transform(
+            #     np.array(
+            #         df_group.loc[
+            #             (df_group[j_col] >= segment_j_lower_limit)
+            #             & (df_group[j_col] <= segment_j_upper_limit),
+            #             j_col,
+            #         ]
+            #     )[..., None]
+            # )
             x_train = x_scaler.fit_transform(
-                np.array(
-                    df_group.loc[
-                        (df_group[j_col] >= segment_j_lower_limit)
-                        & (df_group[j_col] <= segment_j_upper_limit),
-                        j_col,
-                    ]
-                )[..., None]
+                df_group.loc[
+                    (df_group[j_col] >= segment_j_lower_limit)
+                    & (df_group[j_col] <= segment_j_upper_limit),
+                    j_col,
+                ].values
             )
             y_train = y_scaler.fit_transform(
                 np.array(
                     df_group.loc[
                         (df_group[j_col] >= segment_j_lower_limit)
                         & (df_group[j_col] <= segment_j_upper_limit),
-                        "energy_dif_mean",
+                        energy_dif_col,
                     ]
                 )[..., None]
             )
@@ -980,53 +1371,55 @@ def fit_predictions(
                 df_group.loc[
                     (df_group[j_col] >= segment_j_lower_limit)
                     & (df_group[j_col] <= segment_j_upper_limit),
-                    "energy_dif_unc",
+                    unc_obs_col,
                 ]
             )
             model = HuberRegressor(epsilon=1.35, max_iter=1000)  # Was max_iter=500
             model.fit(x_train, y_train.ravel(), sample_weight=y_weights)
 
             model_segment_predictions = model.predict(
-                x_scaler.transform(j_segment[..., None])
+                # x_scaler.transform(j_segment[..., None])
+                x_scaler.transform(j_segment)
             ).reshape(-1, 1)
             segment_predictions = y_scaler.inverse_transform(
                 model_segment_predictions
             ).ravel()
             # Find the J we are making predictions for that we also have known energy_dif values for.
-            segment_j_in_slice = np.array(
-                np.intersect1d(segment_j_coverage, df_group[j_col])
-            )
-            segment_j_outliers = np.array(
-                df_group.loc[
-                    (df_group[j_col].isin(segment_j_in_slice))
-                    & (
-                        abs(
-                            df_group["energy_dif_mean"]
-                            - df_group["energy_dif_mean"].mean()
-                        )
-                        > (2 * df_group["energy_dif_mean"].std())
-                    ),
-                    j_col,
-                ]
-            )
-            segment_j_in_slice_no_outliers = np.setdiff1d(
-                segment_j_in_slice, segment_j_outliers
-            )
+            # segment_j_in_slice = np.array(
+            #     np.intersect1d(segment_j_coverage, df_group[j_col])
+            # )
+            # segment_j_outliers = np.array(
+            #     df_group.loc[
+            #         (df_group[j_col].isin(segment_j_in_slice))
+            #         & (
+            #             abs(df_group[energy_dif_col] - df_group[energy_dif_col].mean())
+            #             > (outlier_sigma_threshold * df_group[energy_dif_col].std())
+            #         ),
+            #         j_col,
+            #     ]
+            # )
+            # segment_j_in_slice_no_outliers = np.setdiff1d(
+            #     segment_j_in_slice, segment_j_outliers
+            # )
+            segment_j_in_slice_no_outliers = df_group.loc[
+                (df_group[j_col] >= segment_j_lower_limit)
+                & (df_group[j_col] <= segment_j_upper_limit)
+                & (
+                    abs(df_group[energy_dif_col] - df_group[energy_dif_col].mean())
+                    <= (outlier_sigma_threshold * df_group[energy_dif_col].std())
+                ),
+                j_col,
+            ].values
 
-            # standard_error_of_estimate = mean_squared_error(
-            #     shift_table_slice.loc[shift_table_slice['j'].isin(segment_j_in_slice_no_outliers),
-            #                           'energy_dif_mean'],
-            #     y_scaler.inverse_transform(model.predict(x_scaler.transform(
-            #         segment_j_in_slice_no_outliers[..., None]))),
-            #     squared=False)
             real_energy = np.array(
                 df_group.loc[
                     df_group[j_col].isin(segment_j_in_slice_no_outliers),
-                    "energy_dif_mean",
+                    energy_dif_col,
                 ]
             )
             mode_present_predictions = model.predict(
-                x_scaler.transform(segment_j_in_slice_no_outliers[..., None])
+                # x_scaler.transform(segment_j_in_slice_no_outliers[..., None])
+                x_scaler.transform(segment_j_in_slice_no_outliers)
             ).reshape(-1, 1)
             present_predictions = y_scaler.inverse_transform(
                 mode_present_predictions
@@ -1040,7 +1433,7 @@ def fit_predictions(
                 df_group.loc[
                     (df_group[j_col] >= segment_j_lower_limit)
                     & (df_group[j_col] <= segment_j_upper_limit),
-                    "energy_dif_unc",
+                    unc_obs_col,
                 ]
             ).mean()
             prediction_error = std_energy + mean_y_error
@@ -1055,19 +1448,19 @@ def fit_predictions(
     # Now take the mean of the last 10 points within 2std and take the mean shift there and apply it to all later trans.
     shift_table_final_rows = (
         df_group.loc[
-            abs(df_group["energy_dif_mean"] - df_group["energy_dif_mean"].mean())
-            < (2 * df_group["energy_dif_mean"].std())
+            abs(df_group[energy_dif_col] - df_group[energy_dif_col].mean())
+            < (outlier_sigma_threshold * df_group[energy_dif_col].std())
         ]
         .sort_values(by=j_col, ascending=[1])
         .tail(j_segment_threshold_size)
     )
-    extrapolate_j_shift_mean = shift_table_final_rows["energy_dif_mean"].mean()
-    extrapolate_j_shift_std = shift_table_final_rows["energy_dif_mean"].std()
-    extrapolate_j_shifts.append(
-        fit_qn_list + (j_max, extrapolate_j_shift_mean, extrapolate_j_shift_std)
+    extrapolate_shift_mean = shift_table_final_rows[energy_dif_col].mean()
+    extrapolate_shift_std = shift_table_final_rows[energy_dif_col].std()
+    extrapolate_shifts.append(
+        fit_qn_list + (j_max, extrapolate_shift_mean, extrapolate_shift_std)
     )
 
-    return shift_predictions, extrapolate_j_shifts
+    return shift_predictions, extrapolate_shifts
 
 
 def set_calc_states(
@@ -1076,6 +1469,8 @@ def set_calc_states(
     base_calc_unc: float = None,
     unc_j_factor: float = 0.0001,
     unc_v_factor: float = 0.05,
+    outlier_sigma_threshold: float = 3,
+    base_unc_scale_factor: float = 2,
     energy_final_col: str = "energy_final",
     energy_calc_col: str = "energy_calc",
     energy_dif_col: str = "energy_dif",
@@ -1093,16 +1488,20 @@ def set_calc_states(
     the uncertainty estimator.
 
     Args:
-        states:           A DataFrame containing all states, those of which without a source_tag set will be updated to
-            calculated.
-        states_header:    The ExoMolStatesHeader object containing the column mappings for the states file.
-        base_calc_unc:    A base uncertainty to add to all calculated levels before scaling based on v and J quantum
-            numbers.
-        unc_j_factor:     The uncertainty scale factor for the J term.
-        unc_v_factor:     The uncertainty scale factor for the v term.
-        energy_final_col: The string label for the final energy column in states.
-        energy_calc_col:  The string label for the calculated energy column in states.
-        energy_dif_col:   The string label for the energy difference column in states.
+        states:                   A DataFrame containing all states, those of which without a source_tag set will be
+            updated to calculated.
+        states_header:            The ExoMolStatesHeader object containing the column mappings for the states file.
+        base_calc_unc:            A base uncertainty to add to all calculated levels before scaling based on v and J
+            quantum numbers.
+        unc_j_factor:             The uncertainty scale factor for the J term.
+        unc_v_factor:             The uncertainty scale factor for the v term.
+        outlier_sigma_threshold:  The standard deviation value outside which outliers are ignored when taking the mean
+            uncertainty in data points for predicted shift final uncertainty estimates.
+        base_unc_scale_factor:    The factor to scale the standard deviation in the obs.-calc. of each state by, for
+            scaling the base uncertainty of calculated states for which some obs. data exists.
+        energy_final_col:         The string label for the final energy column in states.
+        energy_calc_col:          The string label for the calculated energy column in states.
+        energy_dif_col:           The string label for the energy difference column in states.
 
     Returns:
         A DataFrame where all input states without a source tag assigned have been set to Calculated and had their
@@ -1121,8 +1520,34 @@ def set_calc_states(
     if base_calc_unc is None:
         base_calc_unc = 2 * states[energy_dif_col].abs().std()
 
+    statewise_calc_unc = states.loc[~states[energy_dif_col].isna()].copy()
+    statewise_calc_unc[energy_dif_col] = abs(statewise_calc_unc[energy_dif_col])
+
+    def stddev_excluding_outliers(energy_dif_vals: pd.Series):
+        energy_dif_vals = [
+            energy_dif_val
+            for energy_dif_val in energy_dif_vals
+            if (
+                energy_dif_vals.mean() - outlier_sigma_threshold * energy_dif_vals.std()
+            )
+            <= energy_dif_val
+            <= (
+                energy_dif_vals.mean() + outlier_sigma_threshold * energy_dif_vals.std()
+            )
+        ]
+        return base_unc_scale_factor * np.std(np.abs(energy_dif_vals))
+
+    statewise_calc_unc = statewise_calc_unc.groupby(by=["state"]).agg(
+        std_energy_dif=(energy_dif_col, stddev_excluding_outliers)
+    )
+    print(statewise_calc_unc["std_energy_dif"])
+    states = states.merge(statewise_calc_unc, on=["state"], how="left")
+    states["std_energy_dif"] = np.where(
+        states["std_energy_dif"].isna(), base_calc_unc, states["std_energy_dif"]
+    )
+
     states[states_header.unc] = states.apply(
-        lambda x: base_calc_unc
+        lambda x: x["std_energy_dif"]
         + estimate_uncertainty(
             x[states_header.get_rigorous_qn()],
             x[states_header.vibrational_qn],
