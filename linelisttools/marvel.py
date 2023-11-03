@@ -30,7 +30,6 @@ def run_marvel(
         stderr=subprocess.PIPE,
         cwd=transitions_folder,
         env=dict(os.environ),
-        shell=True,
     )
 
     marvel_process.communicate()
