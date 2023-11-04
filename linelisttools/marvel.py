@@ -396,6 +396,7 @@ def optimise_transition_unc(
                         ),
                         log_file,
                         fortran_format_list=log_fortran_format_list,
+                        n_workers=1,
                         append=True,
                     )
             else:
