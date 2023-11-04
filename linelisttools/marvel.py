@@ -361,7 +361,6 @@ def optimise_transition_unc(
         "f7.4",
         "e11.4",
     ]
-    print(log_fortran_format_list)
 
     num_bad_trans = 1
     iteration_num = 0
