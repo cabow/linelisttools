@@ -26,10 +26,11 @@ def run_marvel(
     run_command = f"{marvel_path} -t {marvel_trans_file} {'-s ' + str(segment_file) if segment_file else ''} -n {nqn}{' --minsize ' + str(min_size) if min_size is not None and min_size >= 0 else ''}{' --bootiter ' + str(bootstrap_iterations) if bootstrap_iterations is not None and bootstrap_iterations >= 0 else ''}"
     marvel_process = subprocess.Popen(
         run_command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=transitions_folder,
+        # stdout=subprocess.PIPE,
+        # stderr=subprocess.PIPE,
+        # cwd=transitions_folder,
         env=dict(os.environ),
+        shell=True,
     )
 
     marvel_process.communicate()
