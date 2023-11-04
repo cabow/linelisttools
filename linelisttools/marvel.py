@@ -387,11 +387,6 @@ def optimise_transition_unc(
                     file.write(
                         f"Iteration {iteration_num}\n",
                     )
-                    file.write(
-                        update_trans.sort_values(
-                            by=["offset_factor", "unc_factor"], ascending=[False, False]
-                        )
-                    )
                     output_data(
                         update_trans.sort_values(
                             by=["offset_factor", "unc_factor"], ascending=[False, False]
