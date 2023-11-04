@@ -354,11 +354,11 @@ def optimise_transition_unc(
 
     log_fortran_format_list = [marvel_trans_fortran_format_list[-1]] + [
         "e11.4",
-        "a6",
-        "f7.4",
+        "a2",
+        "f9.4",
         "e11.4",
         "e11.4",
-        "f7.4",
+        "f9.4",
         "e11.4",
     ]
 
@@ -387,6 +387,9 @@ def optimise_transition_unc(
                     file.write(
                         f"Iteration {iteration_num}\n",
                     )
+                    file.write(
+                        f"LENGTH OF DATA: {len(marvel_trans)}, {len(current_bad_trans)}\n"
+                    )
                     output_data(
                         update_trans.sort_values(
                             by=["offset_factor", "unc_factor"], ascending=[False, False]
@@ -395,16 +398,13 @@ def optimise_transition_unc(
                         fortran_format_list=log_fortran_format_list,
                         append=True,
                     )
-                    file.write(
-                        f"\nLENGTH OF DATA: {len(marvel_trans)}, {len(current_bad_trans)}"
-                    )
             else:
                 print(
                     f"Iteration {iteration_num}\n",
+                    f"LENGTH OF DATA: {len(marvel_trans)}, {len(current_bad_trans)}\n",
                     update_trans.sort_values(
                         by=["offset_factor", "unc_factor"], ascending=[False, False]
                     ),
-                    f"\nLENGTH OF DATA: {len(marvel_trans)}, {len(current_bad_trans)}",
                 )
 
             marvel_trans = marvel_trans.merge(
