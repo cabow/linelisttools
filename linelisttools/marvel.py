@@ -33,10 +33,10 @@ def run_marvel(
         shell=True,
     )
 
-    marvel_process.communicate()
-    # std_out_val, std_err_val = communicate_res
-    # print(communicate_res)
-    # print(marvel_process.returncode)
+    communicate_res = marvel_process.communicate()
+    std_out_val, std_err_val = communicate_res
+    print(communicate_res)
+    print(std_out_val, std_err_val)
     return_code = marvel_process.returncode
     if return_code is not None and return_code != 0:
         raise RuntimeError(
@@ -67,8 +67,6 @@ def generate_marvel_energies(
         min_size=min_size,
         bootstrap_iterations=bootstrap_iterations,
     )
-    print("TEST", Path(getcwd()))
-    print("TEST", (Path(getcwd()) / f"./EnergyLevels.txt").resolve())
     marvel_energies = read_marvel_energies(
         marvel_energy_file=(Path(getcwd()) / f"./EnergyLevels.txt").resolve(),
         qn_list=qn_list,
