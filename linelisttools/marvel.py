@@ -468,9 +468,24 @@ def optimise_transition_unc(
                     set(update_trans_tag_list + [worst_trans_tag])
                 )
         else:
-            print("No bad trans?")
+            if log_file:
+                with open(log_file, "a") as file:
+                    file.write("No bad trans?")
+            else:
+                print("No bad trans?")
 
-        print(f"Length of bad transition tag list = {len(bad_trans_tag_list)}")
         num_bad_trans = len(current_bad_trans.loc[current_bad_trans["is_bad"]])
-        print(f"Number of bad transitions at end of iteration = {num_bad_trans}")
+        length_of_tag_list_log = (
+            f"Length of bad transition tag list = {len(bad_trans_tag_list)}\n"
+        )
+        number_bad_trans_log = (
+            f"Number of bad transitions at end of iteration = {num_bad_trans}\n"
+        )
+        if log_file:
+            with open(log_file, "a") as file:
+                file.write(length_of_tag_list_log)
+                file.write(number_bad_trans_log)
+        else:
+            print(length_of_tag_list_log, number_bad_trans_log)
+
         iteration_num += 1
