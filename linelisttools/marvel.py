@@ -33,10 +33,10 @@ def run_marvel(
         shell=True,
     )
 
-    communicate_res = marvel_process.communicate()
-    std_out_val, std_err_val = communicate_res
-    print(communicate_res)
-    print(std_out_val, std_err_val)
+    marvel_process.communicate()
+    # std_out_val, std_err_val = communicate_res
+    # print(communicate_res)
+    # print(std_out_val, std_err_val)
     return_code = marvel_process.returncode
     if return_code is not None and return_code != 0:
         raise RuntimeError(
