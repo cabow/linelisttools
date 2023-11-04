@@ -372,6 +372,7 @@ def optimise_transition_unc(
                 ),
                 axis=1,
             )
+
             if log_file:
                 with open(log_file, "a") as file:
                     file.write(
