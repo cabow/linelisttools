@@ -351,6 +351,18 @@ def optimise_transition_unc(
     check_trans_file = (
         Path(marvel_trans_file).parent / r"./CheckTransitions.txt"
     ).resolve()
+
+    log_fortran_format_list = [marvel_trans_fortran_format_list[-1]] + [
+        "e11.4",
+        "a6",
+        "f7.4",
+        "e11.4",
+        "e11.4",
+        "f7.4",
+        "e11.4",
+    ]
+    print(log_fortran_format_list)
+
     num_bad_trans = 1
     iteration_num = 0
     current_bad_trans = None
@@ -380,6 +392,14 @@ def optimise_transition_unc(
                         update_trans.sort_values(
                             by=["offset_factor", "unc_factor"], ascending=[False, False]
                         )
+                    )
+                    output_data(
+                        update_trans.sort_values(
+                            by=["offset_factor", "unc_factor"], ascending=[False, False]
+                        ),
+                        log_file,
+                        fortran_format_list=log_fortran_format_list,
+                        append=True,
                     )
                     file.write(
                         f"\nLENGTH OF DATA: {len(marvel_trans)}, {len(current_bad_trans)}"
