@@ -67,6 +67,8 @@ def generate_marvel_energies(
         min_size=min_size,
         bootstrap_iterations=bootstrap_iterations,
     )
+    print("TEST", Path(getcwd()))
+    print("TEST", (Path(getcwd()) / f"./EnergyLevels.txt").resolve())
     marvel_energies = read_marvel_energies(
         marvel_energy_file=(Path(getcwd()) / f"./EnergyLevels.txt").resolve(),
         qn_list=qn_list,
@@ -76,7 +78,7 @@ def generate_marvel_energies(
 
 def get_check_trans_regex(nqn: int, only_bad: bool) -> Pattern:
     check_trans_regex = (
-        r"^([\d\w_\-]+\.\d+)[^\S\r\n]+(\d+\.\d+)[^\S\r\n]+(\d+\.\d+)[^\S\r\n]+(\d\.\d+[eE][\-\+]\d+)[^\S\r\n]+"
+        r"^([\d\w_\-]+\.\d+)[^\S\r\n]+(\d+\.\d+)[^\S\r\n]+(-?\d+\.\d+)[^\S\r\n]+(\d\.\d+[eE][\-\+]\d+)[^\S\r\n]+"
         r"(-?\d\.\d+[eE][\-\+]\d+)[^\S\r\n]+"
     )
     check_trans_regex += r"([^\s]+)[^\S\r\n]+" * nqn
