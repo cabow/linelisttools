@@ -333,6 +333,7 @@ def optimise_transition_unc(
     marvel_trans_fortran_format_list: t.List[str],
     min_size: int = None,
     bootstrap_iterations: t.Union[int, None] = 100,
+    log_file: t.Union[str, Path] = None,
 ):
     # TODO: This sometimes gets stuck when all bad trans are included and oscillating about an offset_factor of 1. It is
     #  best to stop and restart the process when that happens, though this may leave a few transitions with slightly
@@ -359,7 +360,6 @@ def optimise_transition_unc(
     bad_trans_tag_list = None
     while num_bad_trans > 0:
         if iteration_num > 0:
-            print(f"Iteration {iteration_num}")
             update_trans = current_bad_trans.loc[
                 current_bad_trans["tag"].isin(update_trans_tag_list)
             ].copy()
@@ -372,13 +372,28 @@ def optimise_transition_unc(
                 ),
                 axis=1,
             )
-            print(
-                update_trans.sort_values(
-                    by=["offset_factor", "unc_factor"], ascending=[False, False]
+            if log_file:
+                with open(log_file, "a") as file:
+                    file.write(
+                        f"Iteration {iteration_num}\n",
+                    )
+                    file.write(
+                        update_trans.sort_values(
+                            by=["offset_factor", "unc_factor"], ascending=[False, False]
+                        )
+                    )
+                    file.write(
+                        f"\nLENGTH OF DATA: {len(marvel_trans)}, {len(current_bad_trans)}"
+                    )
+            else:
+                print(
+                    f"Iteration {iteration_num}\n",
+                    update_trans.sort_values(
+                        by=["offset_factor", "unc_factor"], ascending=[False, False]
+                    ),
+                    f"\nLENGTH OF DATA: {len(marvel_trans)}, {len(current_bad_trans)}",
                 )
-            )
 
-            print(f"LENGTH OF DATA: {len(marvel_trans)}, {len(current_bad_trans)}")
             marvel_trans = marvel_trans.merge(
                 update_trans[["tag", "unc_new"]], on=["tag"], how="left"
             )
