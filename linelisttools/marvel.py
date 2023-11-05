@@ -28,7 +28,7 @@ def run_marvel(
         run_command,
         # stdout=subprocess.PIPE,
         # stderr=subprocess.PIPE,
-        # cwd=transitions_folder,
+        cwd=transitions_folder,
         env=dict(os.environ),
         shell=True,
     )
@@ -301,25 +301,101 @@ def read_marvel_transitions(
 #         iteration_num += 1
 
 
+def parse_units_input(unc: float, units: str) -> float:
+    """
+    Convert unc values read in to wavenumbers to be in the same units as the offset in the CheckTransitions file.
+    Args:
+        unc:
+        units:
+
+    Returns:
+
+    """
+    if units == "cm-1":
+        return unc
+    elif units == "Hz":
+        return unc / 2.99792458e10
+    elif units == "kHz":
+        return unc * 1e3 / 2.99792458e10
+    elif units == "MHz":
+        return unc * 1e6 / 2.99792458e10
+    elif units == "GHz":
+        return unc * 1e9 / 2.99792458e10
+    elif units == "THz":
+        return unc * 1e12 / 2.99792458e10
+    else:
+        raise RuntimeError(f"Error parsing units: {units} not implemented.")
+
+
+def parse_units_output(unc: float, units: str) -> float:
+    """
+    Convert unc values read in to the appropriate units given in the segment file.
+
+    Args:
+        unc:
+        units:
+
+    Returns:
+
+    """
+    if units == "cm-1":
+        return unc
+    elif units == "Hz":
+        return unc * 2.99792458e10
+    elif units == "kHz":
+        return unc * 2.99792458e10 / 1e3
+    elif units == "MHz":
+        return unc * 2.99792458e10 / 1e6
+    elif units == "GHz":
+        return unc * 2.99792458e10 / 1e9
+    elif units == "THz":
+        return unc * 2.99792458e10 / 1e12
+    else:
+        raise RuntimeError(f"Error parsing units: {units} not implemented.")
+
+
 def update_transition_unc(
-    unc: float, offset: float, unc_orig: float, is_bad: bool
+    unc: float,
+    offset: float,
+    unc_orig: float,
+    is_bad: bool,
+    tag: str,
+    segment_data: pd.DataFrame,
 ) -> float:
     unc_new = unc
-    if offset > unc:
+
+    segment_units = segment_data.loc[
+        segment_data["source"] == tag.split(".")[0], "units"
+    ].values[0]
+    if segment_units is None:
+        raise RuntimeError(f"Tag source not found in segment data: {tag}.")
+
+    unc_wn = parse_units_input(
+        unc=unc,
+        units=segment_units,
+    )
+
+    if offset > unc_wn:
         # Transition uncertainty still too low - increase it.
-        unc_new = offset
-    elif unc >= offset and is_bad:
+        unc_new = parse_units_output(unc=offset, units=segment_units)
+    elif unc_wn >= offset and is_bad:
         min_step_size = 1 * 10 ** (math.floor(math.log10(unc)) - 4)
         # -3 would be a change in the last digit of the unc as listed in check_trans, -4 allows change in the following
         # digit not shown there.
         unc_new = unc + min_step_size
-    elif unc > offset:
+    elif unc_wn > offset:
         # Transition uncertainty increased more than it needs to be - lower it, but not below original value.
-        order = -(math.floor(math.log10(unc)) - 3)
-        if int(unc * 10**order) * 10 ** (-order) == offset:
+        order = -(math.floor(math.log10(unc_wn)) - 3)
+        # The -3 here is because uncertainties/offsets in the CheckTransitions file are given to 3dp. This check is to
+        # see whether the 3dp representation of the unc and the offset are equal and to then make a change in the 4dp.
+        if int(unc_wn * 10**order) * 10 ** (-order) == offset:
             unc_new = max(unc - (1 * 10 ** (math.floor(math.log10(unc)) - 4)), unc_orig)
         else:
-            unc_new = max((offset + unc) / 2, unc_orig)
+            unc_new = (offset + unc_wn) / 2
+            unc_new = max(
+                parse_units_output(unc=unc_new, units=segment_units), unc_orig
+            )
+
     return unc_new
 
 
@@ -352,6 +428,10 @@ def optimise_transition_unc(
         Path(marvel_trans_file).parent / r"./CheckTransitions.txt"
     ).resolve()
 
+    segment_data = pd.read_csv(
+        segment_file, delim_whitespace=True, names=["source", "units"]
+    )
+
     log_fortran_format_list = [marvel_trans_fortran_format_list[-1]] + [
         "e11.4",
         "a2",
@@ -378,6 +458,8 @@ def optimise_transition_unc(
                     offset=x["offset"],
                     unc_orig=x["unc_orig"],
                     is_bad=x["is_bad"],
+                    tag=x["tag"],
+                    segment_data=segment_data,
                 ),
                 axis=1,
             )
