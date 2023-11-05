@@ -388,7 +388,7 @@ def update_transition_unc(
         order = -(math.floor(math.log10(unc_wn)) - 3)
         # The -3 here is because uncertainties/offsets in the CheckTransitions file are given to 3dp. This check is to
         # see whether the 3dp representation of the unc and the offset are equal and to then make a change in the 4dp.
-        if int(unc * 10**order) == int(offset * 10**order):
+        if int(unc_wn * 10**order) == int(offset * 10**order):
             unc_new = max(unc - (1 * 10 ** (math.floor(math.log10(unc)) - 4)), unc_orig)
         else:
             unc_new = (offset + unc_wn) / 2
