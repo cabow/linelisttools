@@ -23,12 +23,14 @@ class ExoMolStatesHeader:
     """
     Stores the column names of an ExoMol states file. Certain columns are mandatory (ID, Energy, Degeneracy and a
     rigorous quanutum number) and appear in the first four columns. Others have set positions if they exist such as
-    uncertainty which appears fifth; the lifetime appears after uncertainty if it exists else it is fifth. Other columns
-    representing parity (i.e.: total, rotationless), symmetry (electronic state, group symmetry), counting numbers
-    (i.e.: symmetry block counting), isomer labelling (i.e.: nuclear spin isomer, structural isomer), vibrational
-    quantum numbers and any other quantum numbers follow these in order and can each consist of multiple columns. The
-    final possible column is the source tag, which generally only appears in states file that have been Marvelised (or
-    are isotopologues of one).
+    uncertainty which appears fifth; the lifetime appears after uncertainty if it exists; Lande g-factors appear after
+    uncertainty and lifetime if they exist.
+
+    Other columns representing parity (i.e.: total, rotationless), symmetry (electronic state, group symmetry), counting
+    numbers (i.e.: symmetry block counting), isomer labelling (i.e.: nuclear spin isomer, structural isomer),
+    vibrational quantum numbers and any other quantum numbers follow these in order and can each consist of multiple
+    columns. The final possible column is the source tag, which generally only appears in states file that have been
+    Marvelised (or are isotopologues of one).
     """
 
     # TODO: Include implicit fortran formats for each column?
@@ -41,6 +43,7 @@ class ExoMolStatesHeader:
     _nuclear_spin_default = "I"
     _unc_default = "unc"
     _lifetime_default = "lifetime"
+    _lande_g_default = "lande_g"
     _source_tag_default = "source_tag"
 
     # TODO: Come up with a better solution than this, because indexing these options out to pass into the constructor is
@@ -63,6 +66,7 @@ class ExoMolStatesHeader:
         j_qn: str = _j_qn_default,
         unc: t.Optional[str] = _unc_default,
         lifetime: t.Optional[str] = _lifetime_default,
+        lande_g: t.Optional[str] = _lande_g_default,
         parity: t.Union[StatesParity, t.List[StatesParity]] = StatesParity.TOTAL_PARITY,
         symmetry: t.Union[str, t.List[str]] = None,
         counting_number: t.Optional[t.Union[str, t.List[str]]] = None,
@@ -84,6 +88,7 @@ class ExoMolStatesHeader:
         self._j_qn = j_qn
         self._unc = unc
         self._lifetime = lifetime
+        self._lande_g = lande_g
         self._parity = parity
         self._symmetry = symmetry
         self._counting_number = counting_number
@@ -215,6 +220,17 @@ class ExoMolStatesHeader:
 
     def default_lifetime(self):
         self._lifetime = self._lifetime_default
+
+    @property
+    def lande_g(self) -> str:
+        return self._lande_g
+
+    @lande_g.setter
+    def lande_g(self, value: str):
+        self._lande_g = value
+
+    def default_lande_g(self):
+        self._lande_g = self._lande_g_default
 
     @property
     def parity(self) -> t.Union[StatesParity, t.List[StatesParity]]:
