@@ -871,6 +871,7 @@ def predict_shifts(
                     zorder=3,
                 )
                 # Plot the prediction error bars
+                # len(fitted_group_data[0]) offsets by the length of the fitting group, i.e.: the number of QNs.
                 for pred_error in shift_predictions[fit_idx]:
                     if is_hyperfit:
                         plot_errorbarcolors = hf_offset_colours[
@@ -880,14 +881,20 @@ def predict_shifts(
                                 + nuclear_spin
                             )
                         ]
+                        # The prediction_offset offsets by the number of fit-dependent quantum number columns. This is 2
+                        # for hyperfine fitting (F, J) and 1 for non-hyperfitne fitting (J).
+                        prediction_offset = 2
                     else:
                         plot_errorbarcolors = state_colour_dict.get(
                             fitted_group_data[0][fit_qn_list.index("state")]
                         )
+                        prediction_offset = 1
                     plt.errorbar(
                         pred_error[len(fitted_group_data[0])],
-                        pred_error[len(fitted_group_data[0]) + 2],
-                        yerr=pred_error[len(fitted_group_data[0]) + 3],
+                        pred_error[len(fitted_group_data[0]) + prediction_offset],
+                        yerr=pred_error[
+                            len(fitted_group_data[0]) + prediction_offset + 1
+                        ],
                         c=plot_errorbarcolors,
                         linestyle="None",
                         capsize=5,
@@ -1390,7 +1397,7 @@ def fit_predictions(
                     (df_group[j_col] >= segment_j_lower_limit)
                     & (df_group[j_col] <= segment_j_upper_limit),
                     j_col,
-                ].values
+                ].values.reshape(-1, 1)
             )
             y_train = y_scaler.fit_transform(
                 np.array(
@@ -1412,8 +1419,8 @@ def fit_predictions(
             model.fit(x_train, y_train.ravel(), sample_weight=y_weights)
 
             model_segment_predictions = model.predict(
-                # x_scaler.transform(j_segment[..., None])
-                x_scaler.transform(j_segment)
+                x_scaler.transform(j_segment[..., None])
+                # x_scaler.transform(j_segment)
             ).reshape(-1, 1)
             segment_predictions = y_scaler.inverse_transform(
                 model_segment_predictions
@@ -1452,8 +1459,8 @@ def fit_predictions(
                 ]
             )
             mode_present_predictions = model.predict(
-                # x_scaler.transform(segment_j_in_slice_no_outliers[..., None])
-                x_scaler.transform(segment_j_in_slice_no_outliers)
+                x_scaler.transform(segment_j_in_slice_no_outliers[..., None])
+                # x_scaler.transform(segment_j_in_slice_no_outliers)
             ).reshape(-1, 1)
             present_predictions = y_scaler.inverse_transform(
                 mode_present_predictions
