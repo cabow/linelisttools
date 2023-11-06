@@ -406,7 +406,7 @@ def optimise_transition_unc(
     qn_list: t.List[str],
     marvel_trans_fortran_format_list: t.List[str],
     min_size: int = None,
-    bootstrap_iterations: t.Union[int, None] = 100,
+    bootstrap_iterations: t.Union[int, None] = 0,
     log_file: t.Union[str, Path] = None,
 ):
     # TODO: This sometimes gets stuck when all bad trans are included and oscillating about an offset_factor of 1. It is
