@@ -45,6 +45,7 @@ class ExoMolStatesHeader:
     _lifetime_default = "lifetime"
     _lande_g_default = "lande_g"
     _source_tag_default = "source_tag"
+    _energy_old_default = "energy_old"
 
     # TODO: Come up with a better solution than this, because indexing these options out to pass into the constructor is
     #  very janky.
@@ -74,6 +75,7 @@ class ExoMolStatesHeader:
         vibrational_qn: t.Union[str, t.List[str]] = None,
         other_qn: t.Optional[t.Union[str, t.List[str]]] = None,
         source_tag: t.Optional[str] = _source_tag_default,
+        energy_old: t.Optional[str] = _energy_old_default,
     ):
         if not is_hyperfine:
             hyperfine_qn = None
@@ -96,6 +98,7 @@ class ExoMolStatesHeader:
         self._vibrational_qn = vibrational_qn
         self._other_qn = other_qn
         self._source_tag = source_tag
+        self._energy_old = energy_old
 
     def get_header(self) -> t.List[str]:
         def flatten(nested_list):
@@ -114,6 +117,7 @@ class ExoMolStatesHeader:
                 self._nuclear_spin,
                 self._unc,
                 self._lifetime,
+                self._lande_g,
                 self._parity,
                 self._j_qn,
                 self._symmetry,
@@ -122,6 +126,7 @@ class ExoMolStatesHeader:
                 self._vibrational_qn,
                 self._other_qn,
                 self._source_tag,
+                self._energy_old,
             ]
         else:
             header_order = [
@@ -131,6 +136,7 @@ class ExoMolStatesHeader:
                 self._j_qn,
                 self._unc,
                 self._lifetime,
+                self._lande_g,
                 self._parity,
                 self._symmetry,
                 self._counting_number,
@@ -138,6 +144,7 @@ class ExoMolStatesHeader:
                 self._vibrational_qn,
                 self._other_qn,
                 self._source_tag,
+                self._energy_old,
             ]
         header_order = [column for column in header_order if column is not None]
 
@@ -290,6 +297,17 @@ class ExoMolStatesHeader:
 
     def default_source_tag(self):
         self._source_tag = self._source_tag_default
+
+    @property
+    def energy_old(self) -> t.Optional[str]:
+        return self._energy_old
+
+    @energy_old.setter
+    def energy_old(self, value: t.Optional[str]):
+        self._energy_old = value
+
+    def default_energy_old(self):
+        self._energy_old = self._energy_old_default
 
     def get_rigorous_qn(self) -> str:
         if self.is_hyperfine:
