@@ -1,13 +1,13 @@
 import functools
 import typing as t
 from concurrent.futures import ThreadPoolExecutor
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 import pandas as pd
 
 
-class SourceTag(Enum):
+class SourceTag(StrEnum):
     CALCULATED = "Ca"
     MARVELISED = "Ma"
     EFFECTIVE_HAMILTONIAN = "EH"
@@ -22,9 +22,9 @@ class SourceTag(Enum):
 
     def format_output(self):
         if not pd.isna(self) and self in [
-            self.PS_PARITY_PAIR,
-            self.PS_LINEAR_REGRESSION,
-            self.PS_EXTRAPOLATION,
+            SourceTag.PS_PARITY_PAIR,
+            SourceTag.PS_LINEAR_REGRESSION,
+            SourceTag.PS_EXTRAPOLATION,
         ]:
             # These subtypes of Predicted Shift should all be output as Predicted Shift.
             return self.PREDICTED_SHIFT
@@ -45,6 +45,9 @@ def output_data(
 ) -> None:
     data_out = data.copy()
     if "source_tag" in data_out.columns:
+        # data_out["source_tag"] = data_out["source_tag"].map(
+        #     lambda x: x if isinstance(x, str) else SourceTag.format_output(x)
+        # )
         data_out["source_tag"] = data_out["source_tag"].map(SourceTag.format_output)
 
     worker = functools.partial(format_row, fortran_format_list)
@@ -62,6 +65,8 @@ def output_data(
 def format_row(fortran_format_list: t.List, data_row: t.Tuple) -> str:
     out_row = ""
     for i in range(0, len(data_row)):
+        if i >= 1:
+            out_row += " "
         out_row += fortran_format(val=data_row[i], fmt=fortran_format_list[i])
     return out_row
 

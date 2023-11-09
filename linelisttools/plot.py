@@ -181,6 +181,7 @@ def plot_state_coverage(
     out_file: str = None,
     plot_type: PlotType = PlotType.EVENT,
     electron_configurations: t.List[str] = None,
+    source_tag_list: t.List[str] = None,
     energy_col: str = "energy",
 ) -> None:
     """
@@ -198,6 +199,8 @@ def plot_state_coverage(
         out_file:                 The filepath to save the figure to.
         plot_type:                An enum to determine whether the state coverage is plotted as an event or violin plot.
         electron_configurations:  A list of the possible electron configurations to plot.
+        source_tag_list:          List of source tags to plot, separating out data from each state by source tag. Plots
+            each source tag with different colours, rather than each state, if more than one source tag is provided.
         energy_col:               The string column name for the energy column in the energies DataFrame.
     """
     # TODO: Clarify that electron_configurations is intended to provide the left-to-right plotting order for configs.
@@ -294,11 +297,34 @@ def plot_state_coverage(
 
     # TODO: Allow for switch between vibrant and generic qualitative progression?
     # plot_colour_list = get_qualitative_colors(len(plot_config_states))
-    plot_colour_list = get_vibrant_colors(len(state_list))
+    # plot_colour_list = get_vibrant_colors(len(state_list))
 
     state_energies = [
-        energies.loc[energies["state"] == state, energy_col] for state in state_list
+        energies.loc[
+            (energies["state"] == state) & (energies["source_tag"] == source_tag),
+            energy_col,
+        ]
+        for state in state_list
+        for source_tag in source_tag_list
     ]
+    source_tag_color_dict = {
+        SourceTag.CALCULATED.value: "#EE7733",
+        SourceTag.MARVELISED.value: "#EE3377",
+        SourceTag.EFFECTIVE_HAMILTONIAN.value: "#009988",
+        SourceTag.PREDICTED_SHIFT: "#33BBEE",
+        SourceTag.PS_PARITY_PAIR.value: "#33BBEE",
+        SourceTag.PS_LINEAR_REGRESSION.value: "#FFCC11",  # EECC33 is maybe more in keeping with saturation/brightness.
+        SourceTag.PS_EXTRAPOLATION.value: "#0077BB",
+        SourceTag.PSEUDO_EXPERIMENTAL.value: "#CC3311",
+    }
+
+    if len(source_tag_list) == 1:
+        plot_colour_list = get_vibrant_colors(n_colors=len(state_energies))
+    else:
+        plot_colour_list = [
+            source_tag_color_dict.get(source_tag) for source_tag in source_tag_list
+        ] * len(state_list)
+
     if plot_type.value is PlotType.EVENT.value:
         config_state_widths = [
             0.02 if len(energies) > 1000 else 0.05 for energies in state_energies
@@ -312,16 +338,21 @@ def plot_state_coverage(
             orientation="vertical",
         )
     elif plot_type.value is PlotType.VIOLIN.value:
-        violin_plot = plt.violinplot(
-            state_energies,
-            positions=range(0, len(state_energies)),
-            showmeans=False,
-            showmedians=False,
-            showextrema=False,
-        )
-        for body_idx, body in enumerate(violin_plot["bodies"]):
-            body.set_facecolor(plot_colour_list[body_idx])
-            body.set_alpha(1.0)
+        for state_idx, state_energy in enumerate(state_energies):
+            if len(state_energy) > 0:
+                violin_plot = plt.violinplot(
+                    state_energy,
+                    # positions=range(0, len(state_energies)),
+                    positions=[state_idx],
+                    showmeans=False,
+                    showmedians=False,
+                    showextrema=False,
+                )
+                for body_idx, body in enumerate(violin_plot["bodies"]):
+                    # body.set_facecolor(plot_colour_list[body_idx])
+                    body.set_facecolor(plot_colour_list[state_idx])
+                    body.set_alpha(1.0)
+
     else:
         raise RuntimeError(
             f"PlotType not recognised; acceptable values are {PlotType.EVENT, PlotType.VIOLIN}"
@@ -339,16 +370,25 @@ def plot_state_coverage(
             - text_offset
         )
         plt.text(
-            state_idx,
+            state_idx * len(source_tag_list) + (len(source_tag_list) / 2) - 0.5,
             text_height,
             state_tex_dict.get(state),
             horizontalalignment="center",
             fontsize=label_font_size,
         )
+        if len(source_tag_list) > 1:
+            plt.hlines(
+                y=text_height + (3 * text_offset / 4),
+                xmin=state_idx * len(source_tag_list) - 0.4,
+                xmax=state_idx * len(source_tag_list) + len(source_tag_list) - 0.6,
+                colors="#000000",
+            )
 
-    plt.xlim(left=-0.6, right=len(state_list) - 0.4)
+    plt.xlim(left=-0.6, right=len(state_energies) + 1.4)
     plt.xlabel(
-        "Electronic Configuration",
+        "Electronic State"
+        if state_configuration_dict is None
+        else "Electronic Configuration",
         labelpad=6 if state_configuration_dict is None else 25,
     )
 
@@ -357,7 +397,11 @@ def plot_state_coverage(
 
     plt.tight_layout()
     if out_file is not None:
-        plt.savefig(out_file)
+        plt.savefig(
+            out_file,
+            dpi=800,
+            bbox_inches="tight",
+        )
     if show:
         plt.show()
 
@@ -602,6 +646,8 @@ def plot_states_by_source_tag(
 
     plt.tight_layout()
     if out_file is not None:
-        plt.savefig(out_file, bbox_extra_artists=(plot_legend,), bbox_inches="tight")
+        plt.savefig(
+            out_file, bbox_extra_artists=(plot_legend,), bbox_inches="tight", dpi=800
+        )
     if show:
         plt.show()
