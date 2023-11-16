@@ -319,7 +319,8 @@ def plot_state_coverage(
             "Issue with state_order/state_configuration_dict configuration."
         )
 
-    fig.set_size_inches(18 if len(state_order) > 7 else 9, 5)
+    # fig.set_size_inches(18 if len(state_order) > 7 else 9, 5)
+    fig.set_size_inches(20 if len(state_order) > 7 else 10, 10)
 
     state_energies = [
         energies.loc[
@@ -396,7 +397,7 @@ def plot_state_coverage(
 
     ax = plt.gca()
     _, y_max = ax.get_ylim()
-    text_offset = y_max / (30 - label_fontsize)
+    text_offset = y_max / (28 - label_fontsize)
     state_text_min = 0
     data_invertor = ax.transData.inverted()
     for state_idx, state in enumerate(state_order):
@@ -434,7 +435,7 @@ def plot_state_coverage(
         for plot_config in plot_config_list:
             plt.text(
                 plot_config_tick_mid_dict.get(plot_config),
-                (-5 * text_offset / 2),
+                (-4 * text_offset / 2),
                 plot_config,
                 horizontalalignment="center",
                 fontsize=label_fontsize,
