@@ -1304,6 +1304,24 @@ def fit_predictions_hf(
     return shift_predictions, extrapolate_shifts
 
 
+def segment_j_no_outlier(
+    group: pd.DataFrame,
+    j_lower_limit: t.Union[int, float],
+    j_upper_limit: t.Union[int, float],
+    sigma_threshold: float,
+    j_col: str = "J",
+    energy_dif_col: str = "energy_dif",
+) -> np.array:
+    group_j_segment = group.loc[
+        (group[j_col] >= j_lower_limit) & (group[j_col] <= j_upper_limit),
+    ]
+    return group_j_segment.loc[
+        abs(group_j_segment[energy_dif_col] - group_j_segment[energy_dif_col].mean())
+        <= (sigma_threshold * group_j_segment[energy_dif_col].std()),
+        j_col,
+    ].to_numpy()
+
+
 def fit_predictions(
     j_segment_threshold_size: int,
     j_col: str,
@@ -1392,6 +1410,21 @@ def fit_predictions(
             #         ]
             #     )[..., None]
             # )
+            if (
+                len(
+                    df_group.loc[
+                        (df_group[j_col] >= segment_j_lower_limit)
+                        & (df_group[j_col] <= segment_j_upper_limit),
+                        j_col,
+                    ].values
+                )
+                == 0
+            ):
+                print(
+                    f"No samples found for group {fit_qn_list} in segment range "
+                    f"{segment_j_lower_limit} <= J <= {segment_j_upper_limit}"
+                )
+                break
             x_train = x_scaler.fit_transform(
                 df_group.loc[
                     (df_group[j_col] >= segment_j_lower_limit)
@@ -1425,6 +1458,7 @@ def fit_predictions(
             segment_predictions = y_scaler.inverse_transform(
                 model_segment_predictions
             ).ravel()
+
             # Find the J we are making predictions for that we also have known energy_dif values for.
             # segment_j_in_slice = np.array(
             #     np.intersect1d(segment_j_coverage, df_group[j_col])
@@ -1442,15 +1476,24 @@ def fit_predictions(
             # segment_j_in_slice_no_outliers = np.setdiff1d(
             #     segment_j_in_slice, segment_j_outliers
             # )
-            segment_j_in_slice_no_outliers = df_group.loc[
-                (df_group[j_col] >= segment_j_lower_limit)
-                & (df_group[j_col] <= segment_j_upper_limit)
-                & (
-                    abs(df_group[energy_dif_col] - df_group[energy_dif_col].mean())
-                    <= (outlier_sigma_threshold * df_group[energy_dif_col].std())
-                ),
-                j_col,
-            ].values
+
+            # segment_j_in_slice_no_outliers = df_group.loc[
+            #     (df_group[j_col] >= segment_j_lower_limit)
+            #     & (df_group[j_col] <= segment_j_upper_limit)
+            #     & (
+            #         abs(df_group[energy_dif_col] - df_group[energy_dif_col].mean())
+            #         <= (outlier_sigma_threshold * df_group[energy_dif_col].std())
+            #     ),
+            #     j_col,
+            # ].values
+            segment_j_in_slice_no_outliers = segment_j_no_outlier(
+                group=df_group,
+                j_lower_limit=segment_j_lower_limit,
+                j_upper_limit=segment_j_upper_limit,
+                sigma_threshold=outlier_sigma_threshold,
+                j_col=j_col,
+                energy_dif_col=energy_dif_col,
+            )
 
             real_energy = np.array(
                 df_group.loc[
@@ -1458,12 +1501,12 @@ def fit_predictions(
                     energy_dif_col,
                 ]
             )
-            mode_present_predictions = model.predict(
+            model_present_predictions = model.predict(
                 x_scaler.transform(segment_j_in_slice_no_outliers[..., None])
                 # x_scaler.transform(segment_j_in_slice_no_outliers)
             ).reshape(-1, 1)
             present_predictions = y_scaler.inverse_transform(
-                mode_present_predictions
+                model_present_predictions
             ).ravel()
 
             dif_energy = real_energy - present_predictions

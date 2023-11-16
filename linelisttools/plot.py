@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import legend_handler
+from matplotlib.lines import Line2D
 
 from .format import SourceTag
 
@@ -175,7 +176,7 @@ def get_state_tex(states: t.List[str]) -> t.Dict:
 
 def plot_state_coverage(
     energies: pd.DataFrame,
-    state_list: t.List[str] = None,
+    state_order: t.List[str] = None,
     state_configuration_dict: t.Dict = None,
     show: bool = True,
     out_file: str = None,
@@ -183,6 +184,9 @@ def plot_state_coverage(
     electron_configurations: t.List[str] = None,
     source_tag_list: t.List[str] = None,
     energy_col: str = "energy",
+    legend_position: str = "best",
+    bold_labels: bool = False,
+    y_exponent: bool = False,
 ) -> None:
     """
     Plots the level coverage of the input marvel energies by electronic state as a function of their energies. Orders
@@ -193,7 +197,7 @@ def plot_state_coverage(
 
     Args:
         energies:                 A DataFrame containing the Marvel energies for a molecule.
-        state_list:               A list of the states in the energies DataFrame to plot.
+        state_order:               The order in which to plot the states in the energies DataFrame.
         state_configuration_dict: A dictionary mapping each state to be plotted to its electron configuration.
         show:                     A boolean to determine whether the generated figure is shown.
         out_file:                 The filepath to save the figure to.
@@ -202,9 +206,13 @@ def plot_state_coverage(
         source_tag_list:          List of source tags to plot, separating out data from each state by source tag. Plots
             each source tag with different colours, rather than each state, if more than one source tag is provided.
         energy_col:               The string column name for the energy column in the energies DataFrame.
+        legend_position:          Position for the legend to be placed - must be a valid matplotlib option.
+        bold_labels:              Makes the axes labels bold.
+        y_exponent:               Boolean controlling whether the y-axis ticks are offset by 10^x where x is some
+            suitable exponent.
     """
     # TODO: Clarify that electron_configurations is intended to provide the left-to-right plotting order for configs.
-    if state_list is None and state_configuration_dict is None:
+    if state_order is None and state_configuration_dict is None:
         raise RuntimeError(
             "No values passed for state_list or state_configuration_dict. Either specify which states to plot by "
             "passing a string list to state_list or a dictionary mapping them to their electron configuration to "
@@ -221,10 +229,31 @@ def plot_state_coverage(
             f"State coverage plot only accepts PlotTypes of {PlotType.EVENT} (default) or {PlotType.VIOLIN}."
         )
 
-    plt.figure(dpi=800, figsize=(8, 7))
-    label_font_size = 10
+    fig = plt.figure(dpi=800)
 
-    if state_list is None:
+    # plt.rcParams["axes.linewidth"] = 2
+    # plt.rcParams["xtick.major.width"] = 2
+    # plt.rcParams["xtick.minor.width"] = 2
+    # plt.rcParams["ytick.major.width"] = 2
+    # plt.rcParams["ytick.minor.width"] = 2
+    # plt.rcParams["axes.labelsize"] = 22
+    # plt.rcParams["axes.titlesize"] = 22
+    label_fontsize = 15  # 22
+    tick_fontsize = 12
+
+    if source_tag_list is None:
+        source_tag_list = energies["source_tag"].unique()
+
+    if state_order is None and state_configuration_dict is None:
+        state_order = energies["state"].unique()
+        plt.tick_params(
+            axis="x", which="both", bottom=False, top=False, labelbottom=False
+        )
+    elif state_configuration_dict is not None:
+        if state_order is not None:
+            raise RuntimeWarning(
+                "Ignoring state_order and grouping on electron configuration."
+            )
         if electron_configurations is None:
             plot_config_list = list(set(state_configuration_dict.values()))
         else:
@@ -236,7 +265,7 @@ def plot_state_coverage(
                 )
             )
 
-        state_list = [
+        state_order = [
             state
             for plot_config in plot_config_list
             for state, config in state_configuration_dict.items()
@@ -245,8 +274,11 @@ def plot_state_coverage(
         # TODO: Move exclusion of Perturbed (_P, _PE, _PH) states elsewhere - is it needed at this point?
 
         plot_config_ticks = [
-            state_configuration_dict.get(state) for state in state_list
+            state_configuration_dict.get(state) for state in state_order
         ]
+        if len(source_tag_list) > 1:
+            plot_config_ticks = np.repeat(plot_config_ticks, len(source_tag_list))
+
         plot_config_tick_min_dict = {
             plot_config: min(
                 idx for idx, val in enumerate(plot_config_ticks) if val == plot_config
@@ -269,18 +301,6 @@ def plot_state_coverage(
             for plot_config in plot_config_list
         }
 
-        config_text_offset = (
-            energies.loc[energies["state"].isin(state_list), energy_col].max() / 12
-        )
-        for plot_config in plot_config_list:
-            plt.text(
-                plot_config_tick_mid_dict.get(plot_config),
-                -config_text_offset,  # -3000
-                plot_config,
-                horizontalalignment="center",
-                fontsize=label_font_size,
-            )
-
         plt.tick_params(
             axis="x", which="both", bottom=True, top=True, labelbottom=False
         )
@@ -290,21 +310,23 @@ def plot_state_coverage(
                 for plot_config in plot_config_list
             ][:-1]
         )
-    else:
+    elif state_order is not None:
         plt.tick_params(
             axis="x", which="both", bottom=False, top=False, labelbottom=False
         )
+    else:
+        raise RuntimeError(
+            "Issue with state_order/state_configuration_dict configuration."
+        )
 
-    # TODO: Allow for switch between vibrant and generic qualitative progression?
-    # plot_colour_list = get_qualitative_colors(len(plot_config_states))
-    # plot_colour_list = get_vibrant_colors(len(state_list))
+    fig.set_size_inches(18 if len(state_order) > 7 else 9, 5)
 
     state_energies = [
         energies.loc[
             (energies["state"] == state) & (energies["source_tag"] == source_tag),
             energy_col,
         ]
-        for state in state_list
+        for state in state_order
         for source_tag in source_tag_list
     ]
     source_tag_color_dict = {
@@ -323,7 +345,19 @@ def plot_state_coverage(
     else:
         plot_colour_list = [
             source_tag_color_dict.get(source_tag) for source_tag in source_tag_list
-        ] * len(state_list)
+        ] * len(state_order)
+
+        custom_lines = [
+            Line2D([0], [0], color=source_tag_color_dict.get(source_tag), linewidth=2)
+            for source_tag in source_tag_list
+        ]
+        plt.legend(
+            custom_lines,
+            source_tag_list,
+            loc=legend_position,
+            prop={"size": label_fontsize},
+            ncol=len(source_tag_list),
+        )
 
     if plot_type.value is PlotType.EVENT.value:
         config_state_widths = [
@@ -358,24 +392,36 @@ def plot_state_coverage(
             f"PlotType not recognised; acceptable values are {PlotType.EVENT, PlotType.VIOLIN}"
         )
 
-    state_tex_dict = get_state_tex(states=state_list)
+    state_tex_dict = get_state_tex(states=state_order)
 
-    _, y_max = plt.gca().get_ylim()
-    text_offset = y_max / 30
-    for state_idx, state in enumerate(state_list):
+    ax = plt.gca()
+    _, y_max = ax.get_ylim()
+    text_offset = y_max / (30 - label_fontsize)
+    state_text_min = 0
+    data_invertor = ax.transData.inverted()
+    for state_idx, state in enumerate(state_order):
         text_height = (
             energies.loc[energies["state"] == state, energy_col]
             .sort_values(ascending=True)
             .iloc[0]
             - text_offset
         )
-        plt.text(
+        state_text = plt.text(
             state_idx * len(source_tag_list) + (len(source_tag_list) / 2) - 0.5,
             text_height,
             state_tex_dict.get(state),
             horizontalalignment="center",
-            fontsize=label_font_size,
+            fontsize=label_fontsize,
         )
+        state_text_bottom = data_invertor.transform(
+            (
+                state_text.get_window_extent().width,
+                state_text.get_window_extent().height,
+            )
+        )[1]
+        if state_text_bottom < state_text_min:
+            state_text_min = state_text_bottom
+
         if len(source_tag_list) > 1:
             plt.hlines(
                 y=text_height + (3 * text_offset / 4),
@@ -384,16 +430,49 @@ def plot_state_coverage(
                 colors="#000000",
             )
 
-    plt.xlim(left=-0.6, right=len(state_energies) + 1.4)
+    if state_configuration_dict is not None:
+        for plot_config in plot_config_list:
+            plt.text(
+                plot_config_tick_mid_dict.get(plot_config),
+                (-5 * text_offset / 2),
+                plot_config,
+                horizontalalignment="center",
+                fontsize=label_fontsize,
+            )
+
+    plt.xlim(left=-0.6, right=len(state_energies) - 0.4)
     plt.xlabel(
         "Electronic State"
         if state_configuration_dict is None
         else "Electronic Configuration",
-        labelpad=6 if state_configuration_dict is None else 25,
+        labelpad=10 if state_configuration_dict is None else 30,
+        fontsize=label_fontsize,
+        fontweight="bold" if bold_labels else None,
     )
 
-    plt.tick_params(axis="y", which="both", labelsize=6)
-    plt.ylabel("Energy (cm$^{-1}$)")
+    y_order = int(np.floor(np.log10(y_max)))
+    y_tick_max = np.round(y_max, decimals=-y_order)
+    y_tick_locations = np.arange(start=0, stop=y_tick_max, step=10**y_order)
+    if y_exponent:
+        y_tick_labels = [
+            int(y_tick_location / (10**y_order))
+            for y_tick_location in y_tick_locations
+        ]
+    else:
+        y_tick_labels = [int(y_tick_location) for y_tick_location in y_tick_locations]
+
+    plt.yticks(ticks=y_tick_locations, labels=y_tick_labels, fontsize=tick_fontsize)
+    y_label = (
+        f"Energy (10$^{{{y_order}}}$ cm$^{{-1}}$)"
+        if y_exponent
+        else "Energy (cm$^{-1}$)"
+    )
+    plt.ylabel(
+        y_label,
+        fontsize=label_fontsize,
+        fontweight="bold" if bold_labels else None,
+    )
+    plt.ylim(bottom=(-3 * text_offset / 2), top=y_max)
 
     plt.tight_layout()
     if out_file is not None:
