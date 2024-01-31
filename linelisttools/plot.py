@@ -24,7 +24,7 @@ def get_vibrant_colors(n_colors: int, ordered: bool = False) -> t.List[str]:
             "#33BBEE",
             "#44EE66",
             "#229933",
-            "#FFBB11",  # FFCC11
+            "#FFBB00",  # FFCC11
             "#EE7733",
             "#CC3311",
             "#EE3377",
@@ -41,7 +41,7 @@ def get_vibrant_colors(n_colors: int, ordered: bool = False) -> t.List[str]:
             "#EE3377",
             "#44EE66",
             "#BB33BB",
-            "#FFBB11",  # FFCC11
+            "#FFBB00",  # FFCC11
             "#8833EE",
         ]
     if n_colors > len(vibrant_color_list):
@@ -137,7 +137,7 @@ def get_qualitative_colors(n_colors: int) -> t.List[str]:
         return qualitative_color_dict.get(n_colors)
 
 
-def get_state_tex(states: t.List[str]) -> t.Dict:
+def get_state_tex(states: t.Union[t.List[str], str]) -> t.Dict:
     """
     Maps the input list of string state labels to a TeX markup version, assuming the state label consist of (in order):
         - A single letter (upper- or lower-case) or number.
@@ -154,12 +154,19 @@ def get_state_tex(states: t.List[str]) -> t.Dict:
     Returns:
         A dictionary containing a mapping from the raw state label to its tex markup.
     """
-    states = set(states)
+    if isinstance(states, t.List):
+        states = set(states)
+    elif isinstance(states, str):
+        states = [states]
     state_tex_dict = {}
     state_regex = re.compile(r"([^\W_])([p'`]*?)_?(\d)(\w+)([-\+]?)")
     electronic_shorthand_dict = {"Sig": "Sigma", "Del": "Delta", "Gam": "Gamma"}
     for state in states:
         state_match = state_regex.match(state)
+        if state_match is None:
+            raise RuntimeError(
+                f"Failed to match regex for state {state}: {state_match}"
+            )
         prime = (
             "\\prime" * len(state_match.group(2)) if state_match.group(2) != "" else ""
         )
@@ -169,7 +176,7 @@ def get_state_tex(states: t.List[str]) -> t.Dict:
             electronic_state = electronic_shorthand_dict.get(electronic_state)
 
         symmetry_str = "^" + symmetry if symmetry != "" else ""
-        state_tex = f"{state_match.group(1)}$^{{{prime}{state_match.group(3)}}}\\{electronic_state}{symmetry_str}$"
+        state_tex = f"{state_match.group(1)}$\,^{{{prime}{state_match.group(3)}}}\\{electronic_state}{symmetry_str}$"
         state_tex_dict[state] = state_tex
     return state_tex_dict
 
@@ -231,14 +238,14 @@ def plot_state_coverage(
 
     fig = plt.figure(dpi=800)
 
-    # plt.rcParams["axes.linewidth"] = 2
-    # plt.rcParams["xtick.major.width"] = 2
-    # plt.rcParams["xtick.minor.width"] = 2
-    # plt.rcParams["ytick.major.width"] = 2
-    # plt.rcParams["ytick.minor.width"] = 2
-    # plt.rcParams["axes.labelsize"] = 22
-    # plt.rcParams["axes.titlesize"] = 22
-    label_fontsize = 15  # 22
+    plt.rcParams["axes.linewidth"] = 2
+    plt.rcParams["xtick.major.width"] = 2
+    plt.rcParams["xtick.minor.width"] = 2
+    plt.rcParams["ytick.major.width"] = 2
+    plt.rcParams["ytick.minor.width"] = 2
+    plt.rcParams["axes.labelsize"] = 22
+    plt.rcParams["axes.titlesize"] = 22
+    label_fontsize = 22  # 15
     tick_fontsize = 12
 
     if source_tag_list is None:
@@ -320,7 +327,7 @@ def plot_state_coverage(
         )
 
     # fig.set_size_inches(18 if len(state_order) > 7 else 9, 5)
-    fig.set_size_inches(20 if len(state_order) > 7 else 10, 10)
+    fig.set_size_inches(16 if len(state_order) > 7 else 8, 6)
 
     state_energies = [
         energies.loc[
@@ -331,11 +338,11 @@ def plot_state_coverage(
         for source_tag in source_tag_list
     ]
     source_tag_color_dict = {
-        SourceTag.CALCULATED.value: "#EE7733",
-        SourceTag.MARVELISED.value: "#EE3377",
+        SourceTag.CALCULATED.value: "#8833EE",  # "#EE7733"
+        SourceTag.MARVELISED.value: "#EE7733",  # "#EE3377"
         SourceTag.EFFECTIVE_HAMILTONIAN.value: "#009988",
-        SourceTag.PREDICTED_SHIFT: "#33BBEE",
-        SourceTag.PS_PARITY_PAIR.value: "#33BBEE",
+        SourceTag.PREDICTED_SHIFT: "#33BBEE",  # "#33BBEE"
+        SourceTag.PS_PARITY_PAIR.value: "#EE3377",
         SourceTag.PS_LINEAR_REGRESSION.value: "#FFCC11",  # EECC33 is maybe more in keeping with saturation/brightness.
         SourceTag.PS_EXTRAPOLATION.value: "#0077BB",
         SourceTag.PSEUDO_EXPERIMENTAL.value: "#CC3311",
@@ -435,7 +442,7 @@ def plot_state_coverage(
         for plot_config in plot_config_list:
             plt.text(
                 plot_config_tick_mid_dict.get(plot_config),
-                (-4 * text_offset / 2),
+                (-4.5 * text_offset / 2),
                 plot_config,
                 horizontalalignment="center",
                 fontsize=label_fontsize,

@@ -114,7 +114,7 @@ class ExoMolStatesHeader:
                 self._energy,
                 self._degeneracy,
                 self._hyperfine_qn,
-                self._nuclear_spin,
+                # self._nuclear_spin,  # REMOVED
                 self._unc,
                 self._lifetime,
                 self._lande_g,

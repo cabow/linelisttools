@@ -188,7 +188,7 @@ def calc_hf_skew(
     ]
     mean_present_f_centre = np.mean(present_f_centres)
     abs_f_centre_offset = abs(mean_present_f_centre - mean_possible_f_centre)
-    print(abs_f_centre_offset)
+    # print(abs_f_centre_offset)
 
     return 1 + (hf_skew_scale_factor * abs_f_centre_offset)
 
