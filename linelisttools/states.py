@@ -1315,11 +1315,19 @@ def segment_j_no_outlier(
     group_j_segment = group.loc[
         (group[j_col] >= j_lower_limit) & (group[j_col] <= j_upper_limit),
     ]
-    return group_j_segment.loc[
-        abs(group_j_segment[energy_dif_col] - group_j_segment[energy_dif_col].mean())
-        <= (sigma_threshold * group_j_segment[energy_dif_col].std()),
-        j_col,
-    ].to_numpy()
+    if len(group_j_segment) > 1:
+        return group_j_segment.loc[
+            abs(
+                group_j_segment[energy_dif_col] - group_j_segment[energy_dif_col].mean()
+            )
+            <= (sigma_threshold * group_j_segment[energy_dif_col].std()),
+            j_col,
+        ].to_numpy()
+    else:
+        print(
+            "Segment only has one value, cannot determine outliers in group: \n", group
+        )
+        return group_j_segment[j_col].to_numpy()
 
 
 def fit_predictions(
@@ -1508,7 +1516,6 @@ def fit_predictions(
             present_predictions = y_scaler.inverse_transform(
                 model_present_predictions
             ).ravel()
-
             dif_energy = real_energy - present_predictions
             dif_squared_energy = dif_energy**2
             std_energy = np.sqrt(sum(dif_squared_energy) / len(dif_energy))
