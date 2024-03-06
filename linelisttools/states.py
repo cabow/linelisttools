@@ -1189,13 +1189,23 @@ def fit_predictions_hf(
                         ]
                     )[..., None]
                 )
-                y_weights = 1 / np.array(
-                    df_group.loc[
-                        (df_group[f_col] >= segment_f_lower_limit)
-                        & (df_group[f_col] <= segment_f_upper_limit)
-                        & (df_group[f_col] - df_group[j_col] == hf_component),
-                        unc_obs_col,
-                    ]
+                # y_weights = 1 / np.array(
+                #     df_group.loc[
+                #         (df_group[f_col] >= segment_f_lower_limit)
+                #         & (df_group[f_col] <= segment_f_upper_limit)
+                #         & (df_group[f_col] - df_group[j_col] == hf_component),
+                #         unc_obs_col,
+                #     ]
+                # )
+                y_weights = get_fit_weights(
+                    unc_list=np.array(
+                        df_group.loc[
+                            (df_group[f_col] >= segment_f_lower_limit)
+                            & (df_group[f_col] <= segment_f_upper_limit)
+                            & (df_group[f_col] - df_group[j_col] == hf_component),
+                            unc_obs_col,
+                        ]
+                    )
                 )
                 model = HuberRegressor(epsilon=1.35, max_iter=1000)
                 # model = SVR(kernel="rbf", degree=2, tol=1e-5, C=1)  # better than others
@@ -1330,6 +1340,29 @@ def segment_j_no_outlier(
         return group_j_segment[j_col].to_numpy()
 
 
+def get_fit_weights(unc_list: np.array(float)) -> np.array(float):
+    """
+    Calculated the weights for the energy levels for which predicted shifts are being fit to. Handles the case where
+    a level with 0 uncertainty is included in the fit by assigning it an effective uncertainty one order of magnitude
+    smaller than the next smallest uncertainty in the chunk.
+
+    Args:
+        unc_list: uncertainties of the known levels over which predicted shifts are being fit.
+
+    Returns: An array of fitting weights.
+
+    """
+    if 0 in unc_list:
+        print(unc_list)
+        smallest_non_zero = min([unc for unc in unc_list if unc != 0])
+        print(smallest_non_zero)
+        min_unc = 10 ** (np.floor(np.log10(smallest_non_zero)) - 1)
+        adjusted_unc_list = np.array([max(unc, min_unc) for unc in unc_list])
+        return 1 / adjusted_unc_list
+    else:
+        return 1 / unc_list
+
+
 def fit_predictions(
     j_segment_threshold_size: int,
     j_col: str,
@@ -1449,12 +1482,21 @@ def fit_predictions(
                     ]
                 )[..., None]
             )
-            y_weights = 1 / np.array(
-                df_group.loc[
-                    (df_group[j_col] >= segment_j_lower_limit)
-                    & (df_group[j_col] <= segment_j_upper_limit),
-                    unc_obs_col,
-                ]
+            # y_weights = 1 / np.array(
+            #     df_group.loc[
+            #         (df_group[j_col] >= segment_j_lower_limit)
+            #         & (df_group[j_col] <= segment_j_upper_limit),
+            #         unc_obs_col,
+            #     ]
+            # )
+            y_weights = get_fit_weights(
+                unc_list=np.array(
+                    df_group.loc[
+                        (df_group[j_col] >= segment_j_lower_limit)
+                        & (df_group[j_col] <= segment_j_upper_limit),
+                        unc_obs_col,
+                    ]
+                )
             )
             model = HuberRegressor(epsilon=1.35, max_iter=1000)  # Was max_iter=500
             model.fit(x_train, y_train.ravel(), sample_weight=y_weights)
